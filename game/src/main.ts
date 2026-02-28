@@ -45,11 +45,13 @@ type MachineViewRefs = {
   root: GameObject;
   topRow: GameObject;
   walletRow: GameObject;
+  machine4ModeRow: GameObject;
   board: GameObject;
   actionRow: GameObject;
   machineTitleText: Text;
   machineStatusText: Text;
   stateText: Text;
+  modeText: Text;
   balanceText: Text;
   betText: Text;
   totalRewardText: Text;
@@ -62,6 +64,8 @@ type MachineViewRefs = {
   editModeButton: Button;
   hierarchyToggleButton: Button;
   inspectorToggleButton: Button;
+  normalModeButton: Button;
+  freeSpinModeButton: Button;
   closeRuleButton: Button;
   ruleBodyText: Text;
   ruleOverlayPanel: Panel;
@@ -86,6 +90,7 @@ type MachineViewRefs = {
 };
 
 type SpinState = "accelerate" | "constant" | "decelerate" | "callback" | "stop";
+type Machine4Mode = "normal" | "freeSpin";
 
 type LineWin = {
   lineIndex: number;
@@ -158,6 +163,11 @@ const SPIN_STATE_LABEL: Record<SpinState, string> = {
   stop: "State: Stop",
 };
 
+const MACHINE4_MODE_LABEL: Record<Machine4Mode, string> = {
+  normal: "Normal",
+  freeSpin: "FreeSpin",
+};
+
 const BuildRuleText = (gridConfig: MachineGridConfig): string => {
   const lines = [
     "Rules:",
@@ -173,6 +183,26 @@ const BuildRuleText = (gridConfig: MachineGridConfig): string => {
   lines.push("5) Reward = bet x symbol multiplier.");
   lines.push("6) Multipliers: A2 K3 Q4 J5 7x8 BAR10 STAR12.");
   return lines.join("\n");
+};
+
+const BuildMachineRuleText = (
+  machineId: number,
+  gridConfig: MachineGridConfig,
+  machine4Mode: Machine4Mode,
+): string => {
+  const baseRule = BuildRuleText(gridConfig);
+  if (machineId !== 4) {
+    return baseRule;
+  }
+
+  return [
+    baseRule,
+    "",
+    "Machine 4 Modes:",
+    `Current Mode: ${MACHINE4_MODE_LABEL[machine4Mode]}`,
+    "- Normal: Spin consumes current bet.",
+    "- FreeSpin: Spin does not consume bet.",
+  ].join("\n");
 };
 
 let machine2RollStyleInjected = false;
@@ -735,6 +765,10 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   stateText.Color = "#95a6df";
   stateText.TextAlign = "right";
 
+  const modeText = CreateLabel(titleGroupNode, "ModeText", "Mode: --", 13);
+  modeText.Color = "#95a6df";
+  modeText.TextAlign = "right";
+
   const walletRowNode = CreateChild(pageRoot, "WalletRow");
   const walletRowPanel = walletRowNode.AddComponent(Panel);
   walletRowPanel.LayoutMode = "flow";
@@ -758,6 +792,43 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   const totalRewardText = CreateLabel(walletRowNode, "TotalRewardText", "Total Reward: 0", 18);
   totalRewardText.FontWeight = "600";
   totalRewardText.TextAlign = "right";
+
+  const machine4ModeRowNode = CreateChild(pageRoot, "Machine4ModeRow");
+  const machine4ModeRowPanel = machine4ModeRowNode.AddComponent(Panel);
+  machine4ModeRowPanel.LayoutMode = "flow";
+  machine4ModeRowPanel.Direction = "row";
+  machine4ModeRowPanel.Gap = 10;
+  machine4ModeRowPanel.AlignItems = "center";
+  machine4ModeRowPanel.JustifyContent = "center";
+  machine4ModeRowPanel.Padding = 10;
+  machine4ModeRowPanel.BackgroundColor = "rgba(21, 30, 56, 0.45)";
+  machine4ModeRowPanel.BorderColor = "#39496f";
+  machine4ModeRowPanel.BorderWidth = 1;
+  machine4ModeRowPanel.BorderRadius = 10;
+  SetRect(machine4ModeRowNode, 0, 0, canvas.width - 48, 64);
+
+  const machine4ModeLabel = CreateLabel(machine4ModeRowNode, "Machine4ModeLabel", "Machine 4 Mode:", 16);
+  machine4ModeLabel.FontWeight = "600";
+
+  const normalModeButtonNode = CreateChild(machine4ModeRowNode, "NormalModeButton");
+  const normalModeButton = normalModeButtonNode.AddComponent(Button);
+  normalModeButton.LayoutMode = "flow";
+  normalModeButton.Label = "Normal";
+  normalModeButton.Padding = "8px 12px";
+  normalModeButton.BackgroundColor = "#445283";
+  normalModeButton.BorderColor = "#748ccf";
+  normalModeButton.BorderRadius = 8;
+
+  const freeSpinModeButtonNode = CreateChild(machine4ModeRowNode, "FreeSpinModeButton");
+  const freeSpinModeButton = freeSpinModeButtonNode.AddComponent(Button);
+  freeSpinModeButton.LayoutMode = "flow";
+  freeSpinModeButton.Label = "FreeSpin";
+  freeSpinModeButton.Padding = "8px 12px";
+  freeSpinModeButton.BackgroundColor = "#445283";
+  freeSpinModeButton.BorderColor = "#748ccf";
+  freeSpinModeButton.BorderRadius = 8;
+
+  machine4ModeRowNode.SetActive(false);
 
   const boardNode = CreateChild(pageRoot, "SlotBoard");
   const boardPanel = boardNode.AddComponent(Panel);
@@ -1017,11 +1088,13 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
     root: pageRoot,
     topRow: topRowNode,
     walletRow: walletRowNode,
+    machine4ModeRow: machine4ModeRowNode,
     board: boardNode,
     actionRow: actionRowNode,
     machineTitleText,
     machineStatusText,
     stateText,
+    modeText,
     balanceText,
     betText,
     totalRewardText,
@@ -1034,6 +1107,8 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
     editModeButton,
     hierarchyToggleButton,
     inspectorToggleButton,
+    normalModeButton,
+    freeSpinModeButton,
     closeRuleButton,
     ruleBodyText,
     ruleOverlayPanel: overlayPanel,
@@ -1083,6 +1158,7 @@ let lobbyView: LobbyViewRefs;
 
 let loginMode: LoginMode = "email";
 let selectedMachine: MachineEntry | null = null;
+let machine4Mode: Machine4Mode = "normal";
 let balance = 1000;
 let currentBet = 10;
 let totalRewards = 0;
@@ -1152,6 +1228,50 @@ const GetMachineGridConfig = (machineId: number): MachineGridConfig => {
   return machineId === 4 ? GRID_CONFIG_3X4 : GRID_CONFIG_3X3;
 };
 
+const SetModeButtonActiveStyle = (button: Button, active: boolean): void => {
+  button.BackgroundColor = active ? "#3f8cff" : "#445283";
+  button.BorderColor = active ? "#7fb2ff" : "#748ccf";
+  button.TextColor = "#ffffff";
+};
+
+const UpdateRuleTextForCurrentMachine = (): void => {
+  const machineId = selectedMachine?.id ?? 0;
+  machineView.ruleBodyText.Value = BuildMachineRuleText(machineId, activeGridConfig, machine4Mode);
+};
+
+const RefreshMachineHeader = (): void => {
+  const machine = selectedMachine;
+  if (machine === null) {
+    machineView.machineStatusText.Value = "Status: BASE";
+    machineView.modeText.Value = "Mode: --";
+    return;
+  }
+
+  if (machine.id === 4) {
+    machineView.machineStatusText.Value = `Status: ${machine.status} | Mode: ${MACHINE4_MODE_LABEL[machine4Mode]}`;
+    machineView.modeText.Value = `Mode: ${MACHINE4_MODE_LABEL[machine4Mode]}`;
+    return;
+  }
+
+  machineView.machineStatusText.Value = `Status: ${machine.status}`;
+  machineView.modeText.Value = "Mode: --";
+};
+
+const SetMachine4Mode = (mode: Machine4Mode): void => {
+  machine4Mode = mode;
+  SetModeButtonActiveStyle(machineView.normalModeButton, mode === "normal");
+  SetModeButtonActiveStyle(machineView.freeSpinModeButton, mode === "freeSpin");
+  RefreshMachineHeader();
+  UpdateRuleTextForCurrentMachine();
+  Debug.Log(`[Machine4] Mode -> ${MACHINE4_MODE_LABEL[mode]}`);
+};
+
+const SetMachine4ModeVisible = (visible: boolean): void => {
+  machineView.machine4ModeRow.SetActive(visible);
+  machineView.normalModeButton.Interactable = visible;
+  machineView.freeSpinModeButton.Interactable = visible;
+};
+
 const ApplyMachineGridConfig = (gridConfig: MachineGridConfig): void => {
   activeGridConfig = gridConfig;
   const boardRectTransform = machineView.board.GetComponent(RectTransform);
@@ -1173,7 +1293,7 @@ const ApplyMachineGridConfig = (gridConfig: MachineGridConfig): void => {
     }
   }
 
-  machineView.ruleBodyText.Value = BuildRuleText(gridConfig);
+  UpdateRuleTextForCurrentMachine();
   Debug.Log(`[Machine] Apply grid layout ${gridConfig.rows}x${gridConfig.columns}.`);
 };
 
@@ -1260,6 +1380,9 @@ const SetMachineInteractable = (value: boolean): void => {
   machineView.addBetButton.Interactable = value;
   machineView.subBetButton.Interactable = value;
   machineView.showRuleButton.Interactable = value;
+  const machine4ModeInteractable = value && selectedMachine?.id === 4;
+  machineView.normalModeButton.Interactable = machine4ModeInteractable;
+  machineView.freeSpinModeButton.Interactable = machine4ModeInteractable;
 };
 
 const SetRuleOverlayVisible = (visible: boolean): void => {
@@ -1560,6 +1683,13 @@ const OpenMachinePage = (machine: MachineEntry): void => {
   selectedMachine = machine;
   const gridConfig = GetMachineGridConfig(machine.id);
   ApplyMachineGridConfig(gridConfig);
+  if (machine.id === 4) {
+    SetMachine4ModeVisible(true);
+    SetMachine4Mode("normal");
+  } else {
+    SetMachine4ModeVisible(false);
+    RefreshMachineHeader();
+  }
   if (machine.id === 3) {
     currentGrid = GetGridFromReelAxes(machine3ReelAxes, gridConfig.rows);
   } else if (machine.id === 4) {
@@ -1568,7 +1698,6 @@ const OpenMachinePage = (machine: MachineEntry): void => {
     currentGrid = SpinSymbols(gridConfig.rows * gridConfig.columns);
   }
   machineView.machineTitleText.Value = `Machine ${machine.id.toString().padStart(2, "0")}`;
-  machineView.machineStatusText.Value = `Status: ${machine.status}`;
   SetSpinState("stop");
   lobbyView.root.SetActive(false);
   machineView.root.SetActive(true);
@@ -1662,13 +1791,16 @@ const RunSpin = async (): Promise<void> => {
     return;
   }
 
-  if (balance < currentBet) {
+  const isMachine4FreeSpin = machine.id === 4 && machine4Mode === "freeSpin";
+  if (!isMachine4FreeSpin && balance < currentBet) {
     Debug.Log("[Spin] Reject: insufficient balance.");
     SetRewardMessage("Insufficient balance.", "#ff8f8f");
     return;
   }
 
-  Debug.Log(`[Spin] Start machine=${machine.id} bet=${currentBet} balance=${balance}`);
+  Debug.Log(
+    `[Spin] Start machine=${machine.id} bet=${currentBet} balance=${balance} mode=${machine.id === 4 ? MACHINE4_MODE_LABEL[machine4Mode] : "-"}`,
+  );
 
   spinInProgress = true;
   const localSpinToken = ++spinCancellationToken;
@@ -1676,8 +1808,12 @@ const RunSpin = async (): Promise<void> => {
   SetRuleOverlayVisible(false);
   SetMachineInteractable(false);
 
-  balance -= currentBet;
-  UpdateMachineHud();
+  if (!isMachine4FreeSpin) {
+    balance -= currentBet;
+    UpdateMachineHud();
+  } else {
+    Debug.Log("[Spin] Machine 4 FreeSpin mode: no bet consumed.");
+  }
 
   const targetGrid = SpinSymbols(activeGridConfig.rows * activeGridConfig.columns);
   const ShouldContinue = (): boolean =>
@@ -1722,9 +1858,11 @@ const RunSpin = async (): Promise<void> => {
           return `${paylineName}(+${lineWin.amount})`;
         })
         .join(", ");
-      SetRewardMessage(`WIN +${result.totalWin}. ${lineText}`, "#95d79f");
+      const modeSuffix = machine.id === 4 ? ` [${MACHINE4_MODE_LABEL[machine4Mode]}]` : "";
+      SetRewardMessage(`WIN +${result.totalWin}. ${lineText}${modeSuffix}`, "#95d79f");
     } else {
-      SetRewardMessage("No reward this spin.", "#95a6df");
+      const freeSpinSuffix = isMachine4FreeSpin ? " (FreeSpin)" : "";
+      SetRewardMessage(`No reward this spin.${freeSpinSuffix}`, "#95a6df");
     }
   } finally {
     spinInProgress = false;
@@ -1738,6 +1876,9 @@ const GoBackToLobby = (): void => {
   spinCancellationToken += 1;
   spinInProgress = false;
   selectedMachine = null;
+  SetMachine4ModeVisible(false);
+  RefreshMachineHeader();
+  UpdateRuleTextForCurrentMachine();
   SetMachineInteractable(true);
   StopWinLineLoop();
   SetSpinState("stop");
@@ -1769,6 +1910,20 @@ machineView.subBetButton.OnClick.AddListener(() => {
 
 machineView.addBetButton.OnClick.AddListener(() => {
   ChangeBet(1);
+});
+
+machineView.normalModeButton.OnClick.AddListener(() => {
+  if (selectedMachine?.id !== 4 || spinInProgress) {
+    return;
+  }
+  SetMachine4Mode("normal");
+});
+
+machineView.freeSpinModeButton.OnClick.AddListener(() => {
+  if (selectedMachine?.id !== 4 || spinInProgress) {
+    return;
+  }
+  SetMachine4Mode("freeSpin");
 });
 
 machineView.spinButton.OnClick.AddListener(() => {
@@ -1824,6 +1979,9 @@ MakePanelDraggable(machineView.inspectorDragHandleButton, machineView.inspectorP
 ApplyLoginMode();
 UpdateMachineHud();
 ApplyMachineGridConfig(GRID_CONFIG_3X3);
+SetMachine4Mode("normal");
+SetMachine4ModeVisible(false);
+RefreshMachineHeader();
 RenderGrid(currentGrid);
 SetSpinState("stop");
 SetRuleOverlayVisible(false);
