@@ -120,6 +120,11 @@ const PAYLINES: readonly (readonly [number, number, number])[] = [
 ];
 
 const PAYLINE_NAMES = ["Top", "Middle", "Bottom", "Diagonal LR", "Diagonal RL"];
+const REEL_COLUMN_CELL_INDICES: readonly (readonly number[])[] = [
+  [0, 3, 6],
+  [1, 4, 7],
+  [2, 5, 8],
+];
 const REEL_AXIS_COUNT = 3;
 const VISIBLE_ROWS = 3;
 const REEL_STRIP_LENGTH = 24;
@@ -290,6 +295,7 @@ async function RunStateRollingPhaseForReelAxes(
   getStepMs: (progress01: number) => number,
   shouldContinue: () => boolean,
   onStep: (grid: SlotSymbol[]) => void,
+  onStepVisual?: () => void,
 ): Promise<void> {
   const start = Date.now();
   while (true) {
@@ -308,6 +314,7 @@ async function RunStateRollingPhaseForReelAxes(
     }
     StepReelAxesDown(reelAxes);
     onStep(GetGridFromReelAxes(reelAxes));
+    onStepVisual?.();
   }
 }
 
@@ -1119,7 +1126,38 @@ const SetRewardMessage = (message: string, color = "#95a6df"): void => {
 };
 
 const SetSpinState = (state: SpinState): void => {
+  Debug.Log(`[Spin] State -> ${state}`);
   machineView.stateText.Value = SPIN_STATE_LABEL[state];
+};
+
+const ResetReelVisualTransforms = (): void => {
+  for (const indices of REEL_COLUMN_CELL_INDICES) {
+    for (const index of indices) {
+      const element = machineView.cellPanels[index].Element;
+      element.style.transform = "translateY(0px)";
+      element.style.transition = "none";
+    }
+  }
+};
+
+const TriggerMachine3ReelMoveVisual = (): void => {
+  for (let column = 0; column < REEL_COLUMN_CELL_INDICES.length; column += 1) {
+    const indices = REEL_COLUMN_CELL_INDICES[column];
+    const delayMs = column * 14;
+    setTimeout(() => {
+      for (const index of indices) {
+        const element = machineView.cellPanels[index].Element;
+        element.style.transition = "transform 90ms linear";
+        element.style.transform = "translateY(12px)";
+      }
+      setTimeout(() => {
+        for (const index of indices) {
+          const element = machineView.cellPanels[index].Element;
+          element.style.transform = "translateY(0px)";
+        }
+      }, 0);
+    }, delayMs);
+  }
 };
 
 const SetMachineInteractable = (value: boolean): void => {
@@ -1317,6 +1355,7 @@ const PlayMachine3SpinByStateMachine = async (
   finalGrid: readonly SlotSymbol[],
   shouldContinue: () => boolean,
 ): Promise<void> => {
+  ResetReelVisualTransforms();
   SetSpinState("accelerate");
   await RunStateRollingPhaseForReelAxes(
     machine3ReelAxes,
@@ -1327,17 +1366,27 @@ const PlayMachine3SpinByStateMachine = async (
       currentGrid = grid;
       RenderGrid(currentGrid);
     },
+    TriggerMachine3ReelMoveVisual,
   );
   if (!shouldContinue()) {
+    ResetReelVisualTransforms();
     return;
   }
 
   SetSpinState("constant");
-  await RunStateRollingPhaseForReelAxes(machine3ReelAxes, 760, () => 55, shouldContinue, (grid) => {
-    currentGrid = grid;
-    RenderGrid(currentGrid);
-  });
+  await RunStateRollingPhaseForReelAxes(
+    machine3ReelAxes,
+    760,
+    () => 55,
+    shouldContinue,
+    (grid) => {
+      currentGrid = grid;
+      RenderGrid(currentGrid);
+    },
+    TriggerMachine3ReelMoveVisual,
+  );
   if (!shouldContinue()) {
+    ResetReelVisualTransforms();
     return;
   }
 
@@ -1351,8 +1400,10 @@ const PlayMachine3SpinByStateMachine = async (
       currentGrid = grid;
       RenderGrid(currentGrid);
     },
+    TriggerMachine3ReelMoveVisual,
   );
   if (!shouldContinue()) {
+    ResetReelVisualTransforms();
     return;
   }
 
@@ -1366,6 +1417,7 @@ const PlayMachine3SpinByStateMachine = async (
   SetSpinState("stop");
   currentGrid = GetGridFromReelAxes(machine3ReelAxes);
   RenderGrid(currentGrid);
+  ResetReelVisualTransforms();
 };
 
 const OpenMachinePage = (machine: MachineEntry): void => {
@@ -1382,6 +1434,7 @@ const OpenMachinePage = (machine: MachineEntry): void => {
   SetRuleOverlayVisible(false);
   SetEditorModeEnabled(false);
   SelectHierarchyNode("MachinePage");
+  ResetReelVisualTransforms();
   UpdateMachineHud();
   ResetCellHighlight();
   RenderGrid(currentGrid);
@@ -1537,6 +1590,7 @@ const GoBackToLobby = (): void => {
   SetSpinState("stop");
   SetRuleOverlayVisible(false);
   SetEditorModeEnabled(false);
+  ResetReelVisualTransforms();
   machineView.root.SetActive(false);
   lobbyView.root.SetActive(true);
   Debug.Log("[Nav] Back to lobby completed.");
