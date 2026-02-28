@@ -66,6 +66,7 @@ type MachineViewRefs = {
   inspectorToggleButton: Button;
   normalModeButton: Button;
   freeSpinModeButton: Button;
+  machine4SpeedToggleButton: Button;
   closeRuleButton: Button;
   ruleBodyText: Text;
   ruleOverlayPanel: Panel;
@@ -170,6 +171,7 @@ const MACHINE4_MODE_LABEL: Record<Machine4Mode, string> = {
 const MACHINE4_FREE_SPIN_TRIGGER_CHANCE = 0.1;
 const MACHINE4_FREE_SPIN_MIN_COUNT = 3;
 const MACHINE4_FREE_SPIN_MAX_COUNT = 8;
+const MACHINE4_SEQUENTIAL_START_GAP_MS = 110;
 
 const BuildRuleText = (gridConfig: MachineGridConfig): string => {
   const lines = [
@@ -193,6 +195,7 @@ const BuildMachineRuleText = (
   gridConfig: MachineGridConfig,
   machine4Mode: Machine4Mode,
   machine4FreeSpinsRemaining: number,
+  machine4Accelerated: boolean,
 ): string => {
   const baseRule = BuildRuleText(gridConfig);
   if (machineId !== 4) {
@@ -203,12 +206,14 @@ const BuildMachineRuleText = (
     machine4Mode === "freeSpin"
       ? `Current Mode: ${MACHINE4_MODE_LABEL[machine4Mode]} (Left ${machine4FreeSpinsRemaining})`
       : `Current Mode: ${MACHINE4_MODE_LABEL[machine4Mode]}`;
+  const speedLine = machine4Accelerated ? "Speed: Accelerate (all reels start together)." : "Speed: Normal (reels start left -> right).";
 
   return [
     baseRule,
     "",
     "Machine 4 Modes:",
     modeLine,
+    speedLine,
     "- Normal: Spin consumes current bet.",
     "- Normal has 10% chance to trigger 3~8 FreeSpins.",
     "- FreeSpin: Spin does not consume bet and consumes 1 FreeSpin each spin.",
@@ -324,6 +329,16 @@ function GetGridFromReelAxes(reelAxes: readonly ReelAxis[], rowCount: number): S
 
 function StepReelAxesDown(reelAxes: readonly ReelAxis[]): void {
   for (const axis of reelAxes) {
+    axis.position = (axis.position + 1) % axis.strip.length;
+  }
+}
+
+function StepReelAxesDownByColumns(reelAxes: readonly ReelAxis[], columns: readonly number[]): void {
+  for (const column of columns) {
+    const axis = reelAxes[column];
+    if (axis === undefined) {
+      continue;
+    }
     axis.position = (axis.position + 1) % axis.strip.length;
   }
 }
@@ -838,6 +853,15 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   freeSpinModeButton.BorderColor = "#748ccf";
   freeSpinModeButton.BorderRadius = 8;
 
+  const speedToggleButtonNode = CreateChild(machine4ModeRowNode, "Machine4SpeedToggleButton");
+  const machine4SpeedToggleButton = speedToggleButtonNode.AddComponent(Button);
+  machine4SpeedToggleButton.LayoutMode = "flow";
+  machine4SpeedToggleButton.Label = "Speed: Normal";
+  machine4SpeedToggleButton.Padding = "8px 12px";
+  machine4SpeedToggleButton.BackgroundColor = "#445283";
+  machine4SpeedToggleButton.BorderColor = "#748ccf";
+  machine4SpeedToggleButton.BorderRadius = 8;
+
   machine4ModeRowNode.SetActive(false);
 
   const boardNode = CreateChild(pageRoot, "SlotBoard");
@@ -1119,6 +1143,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
     inspectorToggleButton,
     normalModeButton,
     freeSpinModeButton,
+    machine4SpeedToggleButton,
     closeRuleButton,
     ruleBodyText,
     ruleOverlayPanel: overlayPanel,
@@ -1170,6 +1195,7 @@ let loginMode: LoginMode = "email";
 let selectedMachine: MachineEntry | null = null;
 let machine4Mode: Machine4Mode = "normal";
 let machine4FreeSpinsRemaining = 0;
+let machine4Accelerated = false;
 let balance = 1000;
 let currentBet = 10;
 let totalRewards = 0;
@@ -1249,6 +1275,21 @@ const RollMachine4FreeSpinCount = (): number => {
   return Math.floor(Math.random() * (MACHINE4_FREE_SPIN_MAX_COUNT - MACHINE4_FREE_SPIN_MIN_COUNT + 1)) + MACHINE4_FREE_SPIN_MIN_COUNT;
 };
 
+const SetMachine4SpeedButtonStyle = (accelerated: boolean): void => {
+  machineView.machine4SpeedToggleButton.Label = accelerated ? "Speed: Accelerate" : "Speed: Normal";
+  machineView.machine4SpeedToggleButton.BackgroundColor = accelerated ? "#3f8cff" : "#445283";
+  machineView.machine4SpeedToggleButton.BorderColor = accelerated ? "#7fb2ff" : "#748ccf";
+  machineView.machine4SpeedToggleButton.TextColor = "#ffffff";
+};
+
+const SetMachine4Accelerated = (accelerated: boolean): void => {
+  machine4Accelerated = accelerated;
+  SetMachine4SpeedButtonStyle(machine4Accelerated);
+  RefreshMachineHeader();
+  UpdateRuleTextForCurrentMachine();
+  Debug.Log(`[Machine4] Speed mode -> ${machine4Accelerated ? "Accelerate" : "Normal"}`);
+};
+
 const UpdateRuleTextForCurrentMachine = (): void => {
   const machineId = selectedMachine?.id ?? 0;
   machineView.ruleBodyText.Value = BuildMachineRuleText(
@@ -1256,6 +1297,7 @@ const UpdateRuleTextForCurrentMachine = (): void => {
     activeGridConfig,
     machine4Mode,
     machine4FreeSpinsRemaining,
+    machine4Accelerated,
   );
 };
 
@@ -1272,7 +1314,8 @@ const RefreshMachineHeader = (): void => {
       machine4Mode === "freeSpin"
         ? `${MACHINE4_MODE_LABEL[machine4Mode]} (${machine4FreeSpinsRemaining})`
         : MACHINE4_MODE_LABEL[machine4Mode];
-    machineView.machineStatusText.Value = `Status: ${machine.status} | Mode: ${modeSuffix}`;
+    const speedSuffix = machine4Accelerated ? "Accelerate" : "Normal";
+    machineView.machineStatusText.Value = `Status: ${machine.status} | Mode: ${modeSuffix} | Speed: ${speedSuffix}`;
     machineView.modeText.Value = `Mode: ${modeSuffix}`;
     return;
   }
@@ -1303,6 +1346,7 @@ const SetMachine4ModeVisible = (visible: boolean): void => {
   machineView.machine4ModeRow.SetActive(visible);
   machineView.normalModeButton.Interactable = visible;
   machineView.freeSpinModeButton.Interactable = false;
+  machineView.machine4SpeedToggleButton.Interactable = visible;
 };
 
 const ApplyMachineGridConfig = (gridConfig: MachineGridConfig): void => {
@@ -1408,6 +1452,99 @@ const TriggerMachine3ReelMoveVisual = (): void => {
   }
 };
 
+const GetMachine4ActiveColumns = (elapsedMs: number): number[] => {
+  if (machine4Accelerated) {
+    return Array.from({ length: MACHINE4_REEL_COUNT }, (_, index) => index);
+  }
+
+  const activeColumns: number[] = [];
+  for (let column = 0; column < MACHINE4_REEL_COUNT; column += 1) {
+    const columnStartMs = column * MACHINE4_SEQUENTIAL_START_GAP_MS;
+    if (elapsedMs >= columnStartMs) {
+      activeColumns.push(column);
+    }
+  }
+  return activeColumns;
+};
+
+const TriggerMachine4ReelMoveVisual = (activeColumns: readonly number[]): void => {
+  const machine4ColumnCellIndices = GetBoardColumnCellIndices(MACHINE4_REEL_COUNT);
+  for (const column of activeColumns) {
+    const indices = machine4ColumnCellIndices[column];
+    if (indices === undefined) {
+      continue;
+    }
+    for (const index of indices) {
+      const element = machineView.cellPanels[index].Element;
+      element.style.transition = "transform 85ms linear";
+      element.style.transform = "translateY(12px)";
+    }
+  }
+  setTimeout(() => {
+    for (const column of activeColumns) {
+      const indices = machine4ColumnCellIndices[column];
+      if (indices === undefined) {
+        continue;
+      }
+      for (const index of indices) {
+        const element = machineView.cellPanels[index].Element;
+        element.style.transform = "translateY(0px)";
+      }
+    }
+  }, 0);
+};
+
+const PlayMachine4SpinByStartMode = async (
+  finalGrid: readonly SlotSymbol[],
+  shouldContinue: () => boolean,
+): Promise<void> => {
+  ResetReelVisualTransforms();
+  SetSpinState(machine4Accelerated ? "accelerate" : "constant");
+
+  const spinDurationMs = machine4Accelerated ? 640 : 980;
+  const stepMs = machine4Accelerated ? 56 : 72;
+  const startTime = Date.now();
+
+  while (true) {
+    if (!shouldContinue()) {
+      ResetReelVisualTransforms();
+      return;
+    }
+    const elapsedBeforeStep = Date.now() - startTime;
+    if (elapsedBeforeStep >= spinDurationMs) {
+      break;
+    }
+
+    await Sleep(stepMs);
+    if (!shouldContinue()) {
+      ResetReelVisualTransforms();
+      return;
+    }
+
+    const elapsedAfterStep = Date.now() - startTime;
+    const activeColumns = GetMachine4ActiveColumns(elapsedAfterStep);
+    if (activeColumns.length === 0) {
+      continue;
+    }
+
+    StepReelAxesDownByColumns(machine4ReelAxes, activeColumns);
+    currentGrid = GetGridFromReelAxes(machine4ReelAxes, MACHINE_ROWS);
+    RenderGrid(currentGrid);
+    TriggerMachine4ReelMoveVisual(activeColumns);
+  }
+
+  if (!shouldContinue()) {
+    ResetReelVisualTransforms();
+    return;
+  }
+
+  AlignReelAxesToTargetGrid(machine4ReelAxes, finalGrid, MACHINE_ROWS, MACHINE4_REEL_COUNT);
+  currentGrid = GetGridFromReelAxes(machine4ReelAxes, MACHINE_ROWS);
+  RenderGrid(currentGrid);
+  ResetReelVisualTransforms();
+  SetSpinState("stop");
+};
+
 const SetMachineInteractable = (value: boolean): void => {
   machineView.spinButton.Interactable = value;
   machineView.addBetButton.Interactable = value;
@@ -1416,6 +1553,7 @@ const SetMachineInteractable = (value: boolean): void => {
   const machine4ModeInteractable = value && selectedMachine?.id === 4;
   machineView.normalModeButton.Interactable = machine4ModeInteractable && machine4FreeSpinsRemaining <= 0;
   machineView.freeSpinModeButton.Interactable = false;
+  machineView.machine4SpeedToggleButton.Interactable = machine4ModeInteractable;
 };
 
 const SetRuleOverlayVisible = (visible: boolean): void => {
@@ -1723,6 +1861,7 @@ const OpenMachinePage = (machine: MachineEntry): void => {
     } else {
       SetMachine4Mode("normal");
     }
+    SetMachine4Accelerated(false);
   } else {
     SetMachine4ModeVisible(false);
     RefreshMachineHeader();
@@ -1838,7 +1977,7 @@ const RunSpin = async (): Promise<void> => {
   }
 
   Debug.Log(
-    `[Spin] Start machine=${machine.id} bet=${currentBet} balance=${balance} mode=${machine.id === 4 ? MACHINE4_MODE_LABEL[machine4Mode] : "-"}`,
+    `[Spin] Start machine=${machine.id} bet=${currentBet} balance=${balance} mode=${machine.id === 4 ? MACHINE4_MODE_LABEL[machine4Mode] : "-"} speed=${machine.id === 4 ? (machine4Accelerated ? "Accelerate" : "Normal") : "-"}`,
   );
 
   spinInProgress = true;
@@ -1861,10 +2000,7 @@ const RunSpin = async (): Promise<void> => {
     if (machine.id === 3) {
       await PlayMachine3SpinByStateMachine(targetGrid, ShouldContinue);
     } else if (machine.id === 4) {
-      AlignReelAxesToTargetGrid(machine4ReelAxes, targetGrid, activeGridConfig.rows, activeGridConfig.columns);
-      currentGrid = GetGridFromReelAxes(machine4ReelAxes, activeGridConfig.rows);
-      RenderGrid(currentGrid);
-      SetSpinState("stop");
+      await PlayMachine4SpinByStartMode(targetGrid, ShouldContinue);
     } else {
       currentGrid = targetGrid;
       RenderGrid(currentGrid);
@@ -1998,6 +2134,13 @@ machineView.freeSpinModeButton.OnClick.AddListener(() => {
   SetMachine4Mode("freeSpin");
 });
 
+machineView.machine4SpeedToggleButton.OnClick.AddListener(() => {
+  if (selectedMachine?.id !== 4 || spinInProgress) {
+    return;
+  }
+  SetMachine4Accelerated(!machine4Accelerated);
+});
+
 machineView.spinButton.OnClick.AddListener(() => {
   RunSpin();
 });
@@ -2052,6 +2195,7 @@ ApplyLoginMode();
 UpdateMachineHud();
 ApplyMachineGridConfig(GRID_CONFIG_3X3);
 SetMachine4Mode("normal");
+SetMachine4Accelerated(false);
 SetMachine4ModeVisible(false);
 RefreshMachineHeader();
 RenderGrid(currentGrid);
