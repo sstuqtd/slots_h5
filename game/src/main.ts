@@ -266,10 +266,14 @@ async function RunStateRollingPhaseForReelAxes(
   reelAxes: readonly ReelAxis[],
   durationMs: number,
   getStepMs: (progress01: number) => number,
+  shouldContinue: () => boolean,
   onStep: (grid: SlotSymbol[]) => void,
 ): Promise<void> {
   const start = Date.now();
   while (true) {
+    if (!shouldContinue()) {
+      return;
+    }
     const elapsed = Date.now() - start;
     if (elapsed >= durationMs) {
       break;
@@ -277,6 +281,9 @@ async function RunStateRollingPhaseForReelAxes(
     const progress = Math.min(elapsed / durationMs, 1);
     const stepMs = Math.max(18, Math.round(getStepMs(progress)));
     await Sleep(stepMs);
+    if (!shouldContinue()) {
+      return;
+    }
     StepReelAxesDown(reelAxes);
     onStep(GetGridFromReelAxes(reelAxes));
   }
@@ -835,6 +842,7 @@ let totalRewards = 0;
 let machine3ReelAxes: ReelAxis[] = CreateMachine3ReelAxes();
 let currentGrid: SlotSymbol[] = GetGridFromReelAxes(machine3ReelAxes);
 let spinInProgress = false;
+let spinCancellationToken = 0;
 let winLineLoopToken = 0;
 
 const ActivateTabButton = (button: Button, active: boolean): void => {
@@ -895,7 +903,6 @@ const SetMachineInteractable = (value: boolean): void => {
   machineView.spinButton.Interactable = value;
   machineView.addBetButton.Interactable = value;
   machineView.subBetButton.Interactable = value;
-  machineView.backButton.Interactable = value;
   machineView.showRuleButton.Interactable = value;
 };
 
@@ -936,27 +943,54 @@ const StartWinLineLoop = (lineWins: readonly LineWin[]): void => {
   });
 };
 
-const PlayMachine3SpinByStateMachine = async (finalGrid: readonly SlotSymbol[]): Promise<void> => {
+const PlayMachine3SpinByStateMachine = async (
+  finalGrid: readonly SlotSymbol[],
+  shouldContinue: () => boolean,
+): Promise<void> => {
   SetSpinState("accelerate");
-  await RunStateRollingPhaseForReelAxes(machine3ReelAxes, 520, (progress) => 180 - 120 * progress, (grid) => {
-    currentGrid = grid;
-    RenderGrid(currentGrid);
-  });
+  await RunStateRollingPhaseForReelAxes(
+    machine3ReelAxes,
+    520,
+    (progress) => 180 - 120 * progress,
+    shouldContinue,
+    (grid) => {
+      currentGrid = grid;
+      RenderGrid(currentGrid);
+    },
+  );
+  if (!shouldContinue()) {
+    return;
+  }
 
   SetSpinState("constant");
-  await RunStateRollingPhaseForReelAxes(machine3ReelAxes, 760, () => 55, (grid) => {
+  await RunStateRollingPhaseForReelAxes(machine3ReelAxes, 760, () => 55, shouldContinue, (grid) => {
     currentGrid = grid;
     RenderGrid(currentGrid);
   });
+  if (!shouldContinue()) {
+    return;
+  }
 
   SetSpinState("decelerate");
-  await RunStateRollingPhaseForReelAxes(machine3ReelAxes, 640, (progress) => 60 + 160 * progress, (grid) => {
-    currentGrid = grid;
-    RenderGrid(currentGrid);
-  });
+  await RunStateRollingPhaseForReelAxes(
+    machine3ReelAxes,
+    640,
+    (progress) => 60 + 160 * progress,
+    shouldContinue,
+    (grid) => {
+      currentGrid = grid;
+      RenderGrid(currentGrid);
+    },
+  );
+  if (!shouldContinue()) {
+    return;
+  }
 
   SetSpinState("callback");
   await PlayMachine3CallbackEffect(machineView);
+  if (!shouldContinue()) {
+    return;
+  }
 
   AlignReelAxesToTargetGrid(machine3ReelAxes, finalGrid);
   SetSpinState("stop");
@@ -1062,6 +1096,7 @@ const RunSpin = async (): Promise<void> => {
   }
 
   spinInProgress = true;
+  const localSpinToken = ++spinCancellationToken;
   StopWinLineLoop();
   machineView.ruleOverlay.SetActive(false);
   SetMachineInteractable(false);
@@ -1070,13 +1105,19 @@ const RunSpin = async (): Promise<void> => {
   UpdateMachineHud();
 
   const targetGrid = SpinSymbols();
+  const ShouldContinue = (): boolean =>
+    localSpinToken === spinCancellationToken && selectedMachine === machine && machineView.root.activeSelf;
   try {
     if (machine.id === 3) {
-      await PlayMachine3SpinByStateMachine(targetGrid);
+      await PlayMachine3SpinByStateMachine(targetGrid, ShouldContinue);
     } else {
       currentGrid = targetGrid;
       RenderGrid(currentGrid);
       SetSpinState("stop");
+    }
+
+    if (!ShouldContinue()) {
+      return;
     }
 
     const result = EvaluatePaylines(currentGrid, currentBet);
@@ -1142,6 +1183,10 @@ machineView.closeRuleButton.OnClick.AddListener(() => {
 });
 
 machineView.backButton.OnClick.AddListener(() => {
+  spinCancellationToken += 1;
+  spinInProgress = false;
+  selectedMachine = null;
+  SetMachineInteractable(true);
   StopWinLineLoop();
   SetSpinState("stop");
   machineView.ruleOverlay.SetActive(false);
