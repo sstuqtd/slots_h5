@@ -838,7 +838,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   const normalModeButtonNode = CreateChild(machine4ModeRowNode, "NormalModeButton");
   const normalModeButton = normalModeButtonNode.AddComponent(Button);
   normalModeButton.LayoutMode = "flow";
-  normalModeButton.Label = "Normal";
+  normalModeButton.Label = "Normal Spin";
   normalModeButton.Padding = "8px 12px";
   normalModeButton.BackgroundColor = "#445283";
   normalModeButton.BorderColor = "#748ccf";
@@ -2125,6 +2125,8 @@ machineView.normalModeButton.OnClick.AddListener(() => {
     return;
   }
   SetMachine4Mode("normal");
+  SetRewardMessage("Normal mode selected. Spinning...", "#9fe6ff");
+  RunSpin();
 });
 
 machineView.freeSpinModeButton.OnClick.AddListener(() => {
