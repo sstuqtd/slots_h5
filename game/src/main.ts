@@ -46,6 +46,7 @@ type MachineViewRefs = {
   topRow: GameObject;
   walletRow: GameObject;
   machine4ModeRow: GameObject;
+  machine4ParamRow: GameObject;
   board: GameObject;
   actionRow: GameObject;
   machineTitleText: Text;
@@ -67,6 +68,16 @@ type MachineViewRefs = {
   normalModeButton: Button;
   freeSpinModeButton: Button;
   machine4SpeedToggleButton: Button;
+  machine4ParamApplyButton: Button;
+  machine4ColumnGapInput: InputField;
+  machine4StartupDurationInput: InputField;
+  machine4StartupStepInput: InputField;
+  machine4AccelerateDurationInput: InputField;
+  machine4AccelerateStepInput: InputField;
+  machine4ConstantDurationInput: InputField;
+  machine4ConstantStepInput: InputField;
+  machine4DecelerateDurationInput: InputField;
+  machine4DecelerateStepInput: InputField;
   closeRuleButton: Button;
   ruleBodyText: Text;
   ruleOverlayPanel: Panel;
@@ -90,8 +101,21 @@ type MachineViewRefs = {
   boardPanel: Panel;
 };
 
-type SpinState = "accelerate" | "constant" | "decelerate" | "callback" | "stop";
+type SpinState = "startup" | "accelerate" | "constant" | "decelerate" | "callback" | "stop";
 type Machine4Mode = "normal" | "freeSpin";
+
+type Machine4StateSpinParam = {
+  durationMs: number;
+  stepMs: number;
+};
+
+type Machine4SpinParam = {
+  columnStartGapMs: number;
+  startup: Machine4StateSpinParam;
+  accelerate: Machine4StateSpinParam;
+  constant: Machine4StateSpinParam;
+  decelerate: Machine4StateSpinParam;
+};
 
 type LineWin = {
   lineIndex: number;
@@ -157,6 +181,7 @@ const GRID_CONFIG_3X4: MachineGridConfig = {
 const REEL_STRIP_LENGTH = 24;
 
 const SPIN_STATE_LABEL: Record<SpinState, string> = {
+  startup: "State: Startup",
   accelerate: "State: Accelerate",
   constant: "State: Constant Speed",
   decelerate: "State: Decelerate",
@@ -171,7 +196,25 @@ const MACHINE4_MODE_LABEL: Record<Machine4Mode, string> = {
 const MACHINE4_FREE_SPIN_TRIGGER_CHANCE = 0.1;
 const MACHINE4_FREE_SPIN_MIN_COUNT = 3;
 const MACHINE4_FREE_SPIN_MAX_COUNT = 8;
-const MACHINE4_SEQUENTIAL_START_GAP_MS = 110;
+const DEFAULT_MACHINE4_SPIN_PARAM: Machine4SpinParam = {
+  columnStartGapMs: 110,
+  startup: {
+    durationMs: 400,
+    stepMs: 72,
+  },
+  accelerate: {
+    durationMs: 240,
+    stepMs: 52,
+  },
+  constant: {
+    durationMs: 380,
+    stepMs: 48,
+  },
+  decelerate: {
+    durationMs: 320,
+    stepMs: 78,
+  },
+};
 
 const BuildRuleText = (gridConfig: MachineGridConfig): string => {
   const lines = [
@@ -196,6 +239,7 @@ const BuildMachineRuleText = (
   machine4Mode: Machine4Mode,
   machine4FreeSpinsRemaining: number,
   machine4Accelerated: boolean,
+  machine4SpinParam: Machine4SpinParam,
 ): string => {
   const baseRule = BuildRuleText(gridConfig);
   if (machineId !== 4) {
@@ -217,7 +261,22 @@ const BuildMachineRuleText = (
     "- Normal: Spin consumes current bet.",
     "- Normal has 10% chance to trigger 3~8 FreeSpins.",
     "- FreeSpin: Spin does not consume bet and consumes 1 FreeSpin each spin.",
+    `- Start gap(ms): ${machine4SpinParam.columnStartGapMs}`,
+    `- Startup(ms/step): ${machine4SpinParam.startup.durationMs}/${machine4SpinParam.startup.stepMs}`,
+    `- Accelerate(ms/step): ${machine4SpinParam.accelerate.durationMs}/${machine4SpinParam.accelerate.stepMs}`,
+    `- Constant(ms/step): ${machine4SpinParam.constant.durationMs}/${machine4SpinParam.constant.stepMs}`,
+    `- Decelerate(ms/step): ${machine4SpinParam.decelerate.durationMs}/${machine4SpinParam.decelerate.stepMs}`,
   ].join("\n");
+};
+
+const CloneMachine4SpinParam = (source: Machine4SpinParam): Machine4SpinParam => {
+  return {
+    columnStartGapMs: source.columnStartGapMs,
+    startup: { ...source.startup },
+    accelerate: { ...source.accelerate },
+    constant: { ...source.constant },
+    decelerate: { ...source.decelerate },
+  };
 };
 
 let machine2RollStyleInjected = false;
@@ -818,6 +877,21 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   totalRewardText.FontWeight = "600";
   totalRewardText.TextAlign = "right";
 
+  const CreateMachine4ParamInput = (
+    parent: GameObject,
+    name: string,
+    placeholder: string,
+    width = 84,
+  ): InputField => {
+    const inputNode = CreateChild(parent, name);
+    const input = inputNode.AddComponent(InputField);
+    input.LayoutMode = "flow";
+    input.InputType = "number";
+    input.Placeholder = placeholder;
+    SetRect(inputNode, 0, 0, width, 34);
+    return input;
+  };
+
   const machine4ModeRowNode = CreateChild(pageRoot, "Machine4ModeRow");
   const machine4ModeRowPanel = machine4ModeRowNode.AddComponent(Panel);
   machine4ModeRowPanel.LayoutMode = "flow";
@@ -863,6 +937,100 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   machine4SpeedToggleButton.BorderRadius = 8;
 
   machine4ModeRowNode.SetActive(false);
+
+  const machine4ParamRowNode = CreateChild(pageRoot, "Machine4ParamRow");
+  const machine4ParamRowPanel = machine4ParamRowNode.AddComponent(Panel);
+  machine4ParamRowPanel.LayoutMode = "flow";
+  machine4ParamRowPanel.Direction = "column";
+  machine4ParamRowPanel.Gap = 8;
+  machine4ParamRowPanel.AlignItems = "stretch";
+  machine4ParamRowPanel.Padding = 10;
+  machine4ParamRowPanel.BackgroundColor = "rgba(15, 20, 38, 0.75)";
+  machine4ParamRowPanel.BorderColor = "#4f6096";
+  machine4ParamRowPanel.BorderWidth = 1;
+  machine4ParamRowPanel.BorderRadius = 10;
+  SetRect(machine4ParamRowNode, 0, 0, canvas.width - 48, 156);
+
+  const machine4ParamTitle = CreateLabel(machine4ParamRowNode, "Machine4ParamTitle", "Machine4 Reel Params", 14);
+  machine4ParamTitle.FontWeight = "700";
+
+  const startupParamRowNode = CreateChild(machine4ParamRowNode, "StartupParamRow");
+  const startupParamRowPanel = startupParamRowNode.AddComponent(Panel);
+  startupParamRowPanel.LayoutMode = "flow";
+  startupParamRowPanel.Direction = "row";
+  startupParamRowPanel.Gap = 8;
+  startupParamRowPanel.AlignItems = "center";
+  startupParamRowPanel.JustifyContent = "flex-start";
+
+  const gapLabel = CreateLabel(startupParamRowNode, "GapLabel", "Gap(ms)", 12);
+  gapLabel.Color = "#c6d2f6";
+  const machine4ColumnGapInput = CreateMachine4ParamInput(startupParamRowNode, "ColumnGapInput", "110", 72);
+
+  const startupDurationLabel = CreateLabel(startupParamRowNode, "StartupDurationLabel", "Startup(ms)", 12);
+  startupDurationLabel.Color = "#c6d2f6";
+  const machine4StartupDurationInput = CreateMachine4ParamInput(startupParamRowNode, "StartupDurationInput", "400", 72);
+
+  const startupStepLabel = CreateLabel(startupParamRowNode, "StartupStepLabel", "Startup Step(ms)", 12);
+  startupStepLabel.Color = "#c6d2f6";
+  const machine4StartupStepInput = CreateMachine4ParamInput(startupParamRowNode, "StartupStepInput", "72", 72);
+
+  const stateParamRowNode = CreateChild(machine4ParamRowNode, "StateParamRow");
+  const stateParamRowPanel = stateParamRowNode.AddComponent(Panel);
+  stateParamRowPanel.LayoutMode = "flow";
+  stateParamRowPanel.Direction = "row";
+  stateParamRowPanel.Gap = 8;
+  stateParamRowPanel.AlignItems = "center";
+  stateParamRowPanel.JustifyContent = "flex-start";
+
+  const accelerateDurationLabel = CreateLabel(stateParamRowNode, "AccelerateDurationLabel", "Accel(ms)", 12);
+  accelerateDurationLabel.Color = "#c6d2f6";
+  const machine4AccelerateDurationInput = CreateMachine4ParamInput(
+    stateParamRowNode,
+    "AccelerateDurationInput",
+    "240",
+    68,
+  );
+  const accelerateStepLabel = CreateLabel(stateParamRowNode, "AccelerateStepLabel", "Step", 12);
+  accelerateStepLabel.Color = "#c6d2f6";
+  const machine4AccelerateStepInput = CreateMachine4ParamInput(stateParamRowNode, "AccelerateStepInput", "52", 60);
+
+  const constantDurationLabel = CreateLabel(stateParamRowNode, "ConstantDurationLabel", "Const(ms)", 12);
+  constantDurationLabel.Color = "#c6d2f6";
+  const machine4ConstantDurationInput = CreateMachine4ParamInput(stateParamRowNode, "ConstantDurationInput", "380", 68);
+  const constantStepLabel = CreateLabel(stateParamRowNode, "ConstantStepLabel", "Step", 12);
+  constantStepLabel.Color = "#c6d2f6";
+  const machine4ConstantStepInput = CreateMachine4ParamInput(stateParamRowNode, "ConstantStepInput", "48", 60);
+
+  const decelerateDurationLabel = CreateLabel(stateParamRowNode, "DecelerateDurationLabel", "Decel(ms)", 12);
+  decelerateDurationLabel.Color = "#c6d2f6";
+  const machine4DecelerateDurationInput = CreateMachine4ParamInput(
+    stateParamRowNode,
+    "DecelerateDurationInput",
+    "320",
+    68,
+  );
+  const decelerateStepLabel = CreateLabel(stateParamRowNode, "DecelerateStepLabel", "Step", 12);
+  decelerateStepLabel.Color = "#c6d2f6";
+  const machine4DecelerateStepInput = CreateMachine4ParamInput(stateParamRowNode, "DecelerateStepInput", "78", 60);
+
+  const machine4ParamActionRowNode = CreateChild(machine4ParamRowNode, "Machine4ParamActionRow");
+  const machine4ParamActionRowPanel = machine4ParamActionRowNode.AddComponent(Panel);
+  machine4ParamActionRowPanel.LayoutMode = "flow";
+  machine4ParamActionRowPanel.Direction = "row";
+  machine4ParamActionRowPanel.Gap = 8;
+  machine4ParamActionRowPanel.AlignItems = "center";
+  machine4ParamActionRowPanel.JustifyContent = "flex-end";
+
+  const machine4ParamApplyButtonNode = CreateChild(machine4ParamActionRowNode, "Machine4ParamApplyButton");
+  const machine4ParamApplyButton = machine4ParamApplyButtonNode.AddComponent(Button);
+  machine4ParamApplyButton.LayoutMode = "flow";
+  machine4ParamApplyButton.Label = "Apply Params";
+  machine4ParamApplyButton.Padding = "8px 12px";
+  machine4ParamApplyButton.BackgroundColor = "#4f5d8f";
+  machine4ParamApplyButton.BorderColor = "#7a8fd5";
+  machine4ParamApplyButton.BorderRadius = 8;
+
+  machine4ParamRowNode.SetActive(false);
 
   const boardNode = CreateChild(pageRoot, "SlotBoard");
   const boardPanel = boardNode.AddComponent(Panel);
@@ -1123,6 +1291,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
     topRow: topRowNode,
     walletRow: walletRowNode,
     machine4ModeRow: machine4ModeRowNode,
+    machine4ParamRow: machine4ParamRowNode,
     board: boardNode,
     actionRow: actionRowNode,
     machineTitleText,
@@ -1144,6 +1313,16 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
     normalModeButton,
     freeSpinModeButton,
     machine4SpeedToggleButton,
+    machine4ParamApplyButton,
+    machine4ColumnGapInput,
+    machine4StartupDurationInput,
+    machine4StartupStepInput,
+    machine4AccelerateDurationInput,
+    machine4AccelerateStepInput,
+    machine4ConstantDurationInput,
+    machine4ConstantStepInput,
+    machine4DecelerateDurationInput,
+    machine4DecelerateStepInput,
     closeRuleButton,
     ruleBodyText,
     ruleOverlayPanel: overlayPanel,
@@ -1196,6 +1375,7 @@ let selectedMachine: MachineEntry | null = null;
 let machine4Mode: Machine4Mode = "normal";
 let machine4FreeSpinsRemaining = 0;
 let machine4Accelerated = false;
+let machine4SpinParam: Machine4SpinParam = CloneMachine4SpinParam(DEFAULT_MACHINE4_SPIN_PARAM);
 let balance = 1000;
 let currentBet = 10;
 let totalRewards = 0;
@@ -1290,6 +1470,101 @@ const SetMachine4Accelerated = (accelerated: boolean): void => {
   Debug.Log(`[Machine4] Speed mode -> ${machine4Accelerated ? "Accelerate" : "Normal"}`);
 };
 
+const ParseMachine4ParamInt = (label: string, rawValue: string, minValue: number): number | null => {
+  const parsed = Number.parseInt(rawValue.trim(), 10);
+  if (!Number.isFinite(parsed) || Number.isNaN(parsed) || parsed < minValue) {
+    SetRewardMessage(`[Param] ${label} must be integer >= ${minValue}.`, "#ff8f8f");
+    return null;
+  }
+  return parsed;
+};
+
+const RefreshMachine4ParamInputValues = (): void => {
+  machineView.machine4ColumnGapInput.Text = machine4SpinParam.columnStartGapMs.toString();
+  machineView.machine4StartupDurationInput.Text = machine4SpinParam.startup.durationMs.toString();
+  machineView.machine4StartupStepInput.Text = machine4SpinParam.startup.stepMs.toString();
+  machineView.machine4AccelerateDurationInput.Text = machine4SpinParam.accelerate.durationMs.toString();
+  machineView.machine4AccelerateStepInput.Text = machine4SpinParam.accelerate.stepMs.toString();
+  machineView.machine4ConstantDurationInput.Text = machine4SpinParam.constant.durationMs.toString();
+  machineView.machine4ConstantStepInput.Text = machine4SpinParam.constant.stepMs.toString();
+  machineView.machine4DecelerateDurationInput.Text = machine4SpinParam.decelerate.durationMs.toString();
+  machineView.machine4DecelerateStepInput.Text = machine4SpinParam.decelerate.stepMs.toString();
+};
+
+const ApplyMachine4SpinParamFromInputs = (): boolean => {
+  const columnStartGapMs = ParseMachine4ParamInt("Column Gap", machineView.machine4ColumnGapInput.Text, 0);
+  if (columnStartGapMs === null) {
+    return false;
+  }
+  const startupDurationMs = ParseMachine4ParamInt("Startup Duration", machineView.machine4StartupDurationInput.Text, 1);
+  if (startupDurationMs === null) {
+    return false;
+  }
+  const startupStepMs = ParseMachine4ParamInt("Startup Step", machineView.machine4StartupStepInput.Text, 1);
+  if (startupStepMs === null) {
+    return false;
+  }
+  const accelerateDurationMs = ParseMachine4ParamInt(
+    "Accelerate Duration",
+    machineView.machine4AccelerateDurationInput.Text,
+    1,
+  );
+  if (accelerateDurationMs === null) {
+    return false;
+  }
+  const accelerateStepMs = ParseMachine4ParamInt("Accelerate Step", machineView.machine4AccelerateStepInput.Text, 1);
+  if (accelerateStepMs === null) {
+    return false;
+  }
+  const constantDurationMs = ParseMachine4ParamInt("Constant Duration", machineView.machine4ConstantDurationInput.Text, 1);
+  if (constantDurationMs === null) {
+    return false;
+  }
+  const constantStepMs = ParseMachine4ParamInt("Constant Step", machineView.machine4ConstantStepInput.Text, 1);
+  if (constantStepMs === null) {
+    return false;
+  }
+  const decelerateDurationMs = ParseMachine4ParamInt(
+    "Decelerate Duration",
+    machineView.machine4DecelerateDurationInput.Text,
+    1,
+  );
+  if (decelerateDurationMs === null) {
+    return false;
+  }
+  const decelerateStepMs = ParseMachine4ParamInt("Decelerate Step", machineView.machine4DecelerateStepInput.Text, 1);
+  if (decelerateStepMs === null) {
+    return false;
+  }
+
+  machine4SpinParam = {
+    columnStartGapMs,
+    startup: {
+      durationMs: startupDurationMs,
+      stepMs: startupStepMs,
+    },
+    accelerate: {
+      durationMs: accelerateDurationMs,
+      stepMs: accelerateStepMs,
+    },
+    constant: {
+      durationMs: constantDurationMs,
+      stepMs: constantStepMs,
+    },
+    decelerate: {
+      durationMs: decelerateDurationMs,
+      stepMs: decelerateStepMs,
+    },
+  };
+  RefreshMachine4ParamInputValues();
+  UpdateRuleTextForCurrentMachine();
+  SetRewardMessage("Machine4 params applied.", "#9fe6ff");
+  Debug.Log(
+    `[Machine4] Params applied gap=${columnStartGapMs} startup=${startupDurationMs}/${startupStepMs} accelerate=${accelerateDurationMs}/${accelerateStepMs} constant=${constantDurationMs}/${constantStepMs} decelerate=${decelerateDurationMs}/${decelerateStepMs}`,
+  );
+  return true;
+};
+
 const UpdateRuleTextForCurrentMachine = (): void => {
   const machineId = selectedMachine?.id ?? 0;
   machineView.ruleBodyText.Value = BuildMachineRuleText(
@@ -1298,6 +1573,7 @@ const UpdateRuleTextForCurrentMachine = (): void => {
     machine4Mode,
     machine4FreeSpinsRemaining,
     machine4Accelerated,
+    machine4SpinParam,
   );
 };
 
@@ -1344,9 +1620,20 @@ const SetMachine4Mode = (mode: Machine4Mode): void => {
 
 const SetMachine4ModeVisible = (visible: boolean): void => {
   machineView.machine4ModeRow.SetActive(visible);
+  machineView.machine4ParamRow.SetActive(visible);
   machineView.normalModeButton.Interactable = visible;
   machineView.freeSpinModeButton.Interactable = false;
   machineView.machine4SpeedToggleButton.Interactable = visible;
+  machineView.machine4ParamApplyButton.Interactable = visible;
+  machineView.machine4ColumnGapInput.Interactable = visible;
+  machineView.machine4StartupDurationInput.Interactable = visible;
+  machineView.machine4StartupStepInput.Interactable = visible;
+  machineView.machine4AccelerateDurationInput.Interactable = visible;
+  machineView.machine4AccelerateStepInput.Interactable = visible;
+  machineView.machine4ConstantDurationInput.Interactable = visible;
+  machineView.machine4ConstantStepInput.Interactable = visible;
+  machineView.machine4DecelerateDurationInput.Interactable = visible;
+  machineView.machine4DecelerateStepInput.Interactable = visible;
 };
 
 const ApplyMachineGridConfig = (gridConfig: MachineGridConfig): void => {
@@ -1460,7 +1747,7 @@ const GetMachine4ActiveColumns = (elapsedMs: number): number[] => {
 
   const activeColumns: number[] = [];
   for (let column = 0; column < MACHINE4_REEL_COUNT; column += 1) {
-    const columnStartMs = column * MACHINE4_SEQUENTIAL_START_GAP_MS;
+    const columnStartMs = column * machine4SpinParam.columnStartGapMs;
     if (elapsedMs >= columnStartMs) {
       activeColumns.push(column);
     }
@@ -1501,38 +1788,89 @@ const PlayMachine4SpinByStartMode = async (
   shouldContinue: () => boolean,
 ): Promise<void> => {
   ResetReelVisualTransforms();
-  SetSpinState(machine4Accelerated ? "accelerate" : "constant");
+  const allColumns = Array.from({ length: MACHINE4_REEL_COUNT }, (_, index) => index);
 
-  const spinDurationMs = machine4Accelerated ? 640 : 980;
-  const stepMs = machine4Accelerated ? 56 : 72;
-  const startTime = Date.now();
+  const RunMachine4Phase = async (
+    state: SpinState,
+    durationMs: number,
+    stepMs: number,
+    getActiveColumns: (elapsedMs: number) => number[],
+  ): Promise<boolean> => {
+    SetSpinState(state);
+    const startTime = Date.now();
+    while (true) {
+      if (!shouldContinue()) {
+        ResetReelVisualTransforms();
+        return false;
+      }
+      const elapsedBeforeStep = Date.now() - startTime;
+      if (elapsedBeforeStep >= durationMs) {
+        break;
+      }
 
-  while (true) {
-    if (!shouldContinue()) {
-      ResetReelVisualTransforms();
-      return;
+      await Sleep(Math.max(18, stepMs));
+      if (!shouldContinue()) {
+        ResetReelVisualTransforms();
+        return false;
+      }
+
+      const elapsedAfterStep = Date.now() - startTime;
+      const activeColumns = getActiveColumns(elapsedAfterStep);
+      if (activeColumns.length === 0) {
+        continue;
+      }
+
+      StepReelAxesDownByColumns(machine4ReelAxes, activeColumns);
+      currentGrid = GetGridFromReelAxes(machine4ReelAxes, MACHINE_ROWS);
+      RenderGrid(currentGrid);
+      TriggerMachine4ReelMoveVisual(activeColumns);
     }
-    const elapsedBeforeStep = Date.now() - startTime;
-    if (elapsedBeforeStep >= spinDurationMs) {
-      break;
-    }
+    return true;
+  };
 
-    await Sleep(stepMs);
-    if (!shouldContinue()) {
-      ResetReelVisualTransforms();
-      return;
-    }
+  const startupCompleted = await RunMachine4Phase(
+    "startup",
+    machine4SpinParam.startup.durationMs,
+    machine4SpinParam.startup.stepMs,
+    (elapsedMs) => {
+      if (machine4Accelerated) {
+        return allColumns;
+      }
+      return GetMachine4ActiveColumns(elapsedMs);
+    },
+  );
+  if (!startupCompleted) {
+    return;
+  }
 
-    const elapsedAfterStep = Date.now() - startTime;
-    const activeColumns = GetMachine4ActiveColumns(elapsedAfterStep);
-    if (activeColumns.length === 0) {
-      continue;
-    }
+  const accelerateCompleted = await RunMachine4Phase(
+    "accelerate",
+    machine4SpinParam.accelerate.durationMs,
+    machine4SpinParam.accelerate.stepMs,
+    () => allColumns,
+  );
+  if (!accelerateCompleted) {
+    return;
+  }
 
-    StepReelAxesDownByColumns(machine4ReelAxes, activeColumns);
-    currentGrid = GetGridFromReelAxes(machine4ReelAxes, MACHINE_ROWS);
-    RenderGrid(currentGrid);
-    TriggerMachine4ReelMoveVisual(activeColumns);
+  const constantCompleted = await RunMachine4Phase(
+    "constant",
+    machine4SpinParam.constant.durationMs,
+    machine4SpinParam.constant.stepMs,
+    () => allColumns,
+  );
+  if (!constantCompleted) {
+    return;
+  }
+
+  const decelerateCompleted = await RunMachine4Phase(
+    "decelerate",
+    machine4SpinParam.decelerate.durationMs,
+    machine4SpinParam.decelerate.stepMs,
+    () => allColumns,
+  );
+  if (!decelerateCompleted) {
+    return;
   }
 
   if (!shouldContinue()) {
@@ -1556,6 +1894,16 @@ const SetMachineInteractable = (value: boolean): void => {
   machineView.normalModeButton.Interactable = machine4ModeInteractable && machine4FreeSpinsRemaining <= 0;
   machineView.freeSpinModeButton.Interactable = false;
   machineView.machine4SpeedToggleButton.Interactable = machine4ModeInteractable;
+  machineView.machine4ParamApplyButton.Interactable = machine4ModeInteractable;
+  machineView.machine4ColumnGapInput.Interactable = machine4ModeInteractable;
+  machineView.machine4StartupDurationInput.Interactable = machine4ModeInteractable;
+  machineView.machine4StartupStepInput.Interactable = machine4ModeInteractable;
+  machineView.machine4AccelerateDurationInput.Interactable = machine4ModeInteractable;
+  machineView.machine4AccelerateStepInput.Interactable = machine4ModeInteractable;
+  machineView.machine4ConstantDurationInput.Interactable = machine4ModeInteractable;
+  machineView.machine4ConstantStepInput.Interactable = machine4ModeInteractable;
+  machineView.machine4DecelerateDurationInput.Interactable = machine4ModeInteractable;
+  machineView.machine4DecelerateStepInput.Interactable = machine4ModeInteractable;
 };
 
 const SetRuleOverlayVisible = (visible: boolean): void => {
@@ -1857,6 +2205,7 @@ const OpenMachinePage = (machine: MachineEntry): void => {
   const gridConfig = GetMachineGridConfig(machine.id);
   ApplyMachineGridConfig(gridConfig);
   if (machine.id === 4) {
+    RefreshMachine4ParamInputValues();
     SetMachine4ModeVisible(true);
     if (machine4FreeSpinsRemaining > 0) {
       SetMachine4Mode("freeSpin");
@@ -2145,6 +2494,13 @@ machineView.machine4SpeedToggleButton.OnClick.AddListener(() => {
   SetMachine4Accelerated(!machine4Accelerated);
 });
 
+machineView.machine4ParamApplyButton.OnClick.AddListener(() => {
+  if (selectedMachine?.id !== 4 || spinInProgress) {
+    return;
+  }
+  ApplyMachine4SpinParamFromInputs();
+});
+
 machineView.spinButton.OnClick.AddListener(() => {
   RunSpin();
 });
@@ -2198,6 +2554,7 @@ MakePanelDraggable(machineView.inspectorDragHandleButton, machineView.inspectorP
 ApplyLoginMode();
 UpdateMachineHud();
 ApplyMachineGridConfig(GRID_CONFIG_3X3);
+RefreshMachine4ParamInputValues();
 SetMachine4Mode("normal");
 SetMachine4Accelerated(false);
 SetMachine4ModeVisible(false);
