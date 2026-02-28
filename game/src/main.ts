@@ -14,6 +14,8 @@ import {
 } from "@h5unity/engine";
 
 type LoginMode = "email" | "phone";
+type MachineStatus = "BASE";
+type SlotSymbol = "A" | "K" | "Q" | "J" | "7" | "BAR" | "STAR";
 
 type LoginViewRefs = {
   root: GameObject;
@@ -33,6 +35,67 @@ type LobbyViewRefs = {
   root: GameObject;
   welcomeText: Text;
 };
+
+type MachineEntry = {
+  id: number;
+  status: MachineStatus;
+};
+
+type MachineViewRefs = {
+  root: GameObject;
+  machineTitleText: Text;
+  machineStatusText: Text;
+  balanceText: Text;
+  betText: Text;
+  totalRewardText: Text;
+  rewardText: Text;
+  spinButton: Button;
+  addBetButton: Button;
+  subBetButton: Button;
+  showRuleButton: Button;
+  backButton: Button;
+  closeRuleButton: Button;
+  ruleOverlay: GameObject;
+  cellTexts: Text[];
+  cellPanels: Panel[];
+};
+
+const SLOT_SYMBOLS: readonly SlotSymbol[] = ["A", "K", "Q", "J", "7", "BAR", "STAR"];
+
+const PAYOUT_MULTIPLIER: Record<SlotSymbol, number> = {
+  A: 2,
+  K: 3,
+  Q: 4,
+  J: 5,
+  "7": 8,
+  BAR: 10,
+  STAR: 12,
+};
+
+const PAYLINES: readonly (readonly [number, number, number])[] = [
+  [0, 1, 2],
+  [3, 4, 5],
+  [6, 7, 8],
+  [0, 4, 8],
+  [2, 4, 6],
+];
+
+const PAYLINE_NAMES = ["Top", "Middle", "Bottom", "Diagonal LR", "Diagonal RL"];
+
+const RULE_TEXT = [
+  "Rules:",
+  "1) Spin costs current bet.",
+  "2) Slot board is 3x3.",
+  "3) Paylines:",
+  "   - Top row (0,1,2)",
+  "   - Middle row (3,4,5)",
+  "   - Bottom row (6,7,8)",
+  "   - Diagonal LR (0,4,8)",
+  "   - Diagonal RL (2,4,6)",
+  "4) Three same symbols in one payline wins reward.",
+  "5) Reward = bet x symbol multiplier.",
+  "6) Multipliers: A2 K3 Q4 J5 7x8 BAR10 STAR12.",
+].join("\n");
 
 function CreateChild(parent: GameObject, name: string): GameObject {
   const child = new GameObject(name);
@@ -63,6 +126,31 @@ function CreateLabel(parent: GameObject, name: string, value: string, fontSize =
   label.Value = value;
   label.FontSize = fontSize;
   return label;
+}
+
+function RandomSymbol(): SlotSymbol {
+  const index = Math.floor(Math.random() * SLOT_SYMBOLS.length);
+  return SLOT_SYMBOLS[index];
+}
+
+function SpinSymbols(): SlotSymbol[] {
+  return Array.from({ length: 9 }, () => RandomSymbol());
+}
+
+function EvaluatePaylines(symbols: SlotSymbol[], bet: number): { totalWin: number; winningLines: number[] } {
+  let totalWin = 0;
+  const winningLines: number[] = [];
+  for (let lineIndex = 0; lineIndex < PAYLINES.length; lineIndex += 1) {
+    const [a, b, c] = PAYLINES[lineIndex];
+    const symbolA = symbols[a];
+    const symbolB = symbols[b];
+    const symbolC = symbols[c];
+    if (symbolA === symbolB && symbolB === symbolC) {
+      totalWin += bet * PAYOUT_MULTIPLIER[symbolA];
+      winningLines.push(lineIndex);
+    }
+  }
+  return { totalWin, winningLines };
 }
 
 function BuildLoginPage(root: GameObject, canvas: HTMLCanvasElement): LoginViewRefs {
@@ -183,7 +271,12 @@ function BuildLoginPage(root: GameObject, canvas: HTMLCanvasElement): LoginViewR
   };
 }
 
-function BuildLobbyPage(root: GameObject, canvas: HTMLCanvasElement): LobbyViewRefs {
+function BuildLobbyPage(
+  root: GameObject,
+  canvas: HTMLCanvasElement,
+  machineEntries: readonly MachineEntry[],
+  onEnterMachine: (machine: MachineEntry) => void,
+): LobbyViewRefs {
   const pageRoot = CreateChild(root, "LobbyPage");
   const pagePanel = pageRoot.AddComponent(Panel);
   pagePanel.LayoutMode = "absolute";
@@ -212,8 +305,8 @@ function BuildLobbyPage(root: GameObject, canvas: HTMLCanvasElement): LobbyViewR
   scrollRect.BackgroundColor = "rgba(8, 11, 22, 0.35)";
   SetRect(scrollNode, 0, 0, canvas.width - 48, 280);
 
-  for (let index = 1; index <= 10; index += 1) {
-    const machineNode = CreateChild(scrollNode, `Machine-${index}`);
+  for (const machine of machineEntries) {
+    const machineNode = CreateChild(scrollNode, `Machine-${machine.id}`);
     const machinePanel = machineNode.AddComponent(Panel);
     machinePanel.LayoutMode = "flow";
     machinePanel.Direction = "column";
@@ -236,11 +329,16 @@ function BuildLobbyPage(root: GameObject, canvas: HTMLCanvasElement): LobbyViewR
     icon.BorderRadius = 10;
     SetRect(iconNode, 0, 0, 132, 92);
 
-    const machineTitle = CreateLabel(machineNode, "MachineTitle", `Machine ${index.toString().padStart(2, "0")}`, 18);
+    const machineTitle = CreateLabel(
+      machineNode,
+      "MachineTitle",
+      `Machine ${machine.id.toString().padStart(2, "0")}`,
+      18,
+    );
     machineTitle.FontWeight = "600";
     machineTitle.TextAlign = "center";
 
-    const machineStatus = CreateLabel(machineNode, "MachineStatus", "Status: BASE", 14);
+    const machineStatus = CreateLabel(machineNode, "MachineStatus", `Status: ${machine.status}`, 14);
     machineStatus.Color = "#95d79f";
     machineStatus.TextAlign = "center";
 
@@ -254,13 +352,234 @@ function BuildLobbyPage(root: GameObject, canvas: HTMLCanvasElement): LobbyViewR
     entryButton.BorderColor = "#4f7bff";
     entryButton.BorderRadius = 8;
     entryButton.OnClick.AddListener(() => {
-      Debug.Log(`Select machine ${index.toString().padStart(2, "0")} with status BASE.`);
+      onEnterMachine(machine);
     });
   }
 
   return {
     root: pageRoot,
     welcomeText,
+  };
+}
+
+function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineViewRefs {
+  const pageRoot = CreateChild(root, "MachinePage");
+  const pagePanel = pageRoot.AddComponent(Panel);
+  pagePanel.LayoutMode = "absolute";
+  pagePanel.Direction = "column";
+  pagePanel.Gap = 14;
+  pagePanel.Padding = 24;
+  pagePanel.BackgroundColor = "linear-gradient(180deg, #10192f 0%, #0b1223 100%)";
+  SetRect(pageRoot, 0, 0, canvas.width, canvas.height, 0, 0);
+
+  const topRowNode = CreateChild(pageRoot, "TopRow");
+  const topRowPanel = topRowNode.AddComponent(Panel);
+  topRowPanel.LayoutMode = "flow";
+  topRowPanel.Direction = "row";
+  topRowPanel.AlignItems = "center";
+  topRowPanel.JustifyContent = "space-between";
+  SetRect(topRowNode, 0, 0, canvas.width - 48, 68);
+
+  const backButtonNode = CreateChild(topRowNode, "BackButton");
+  const backButton = backButtonNode.AddComponent(Button);
+  backButton.LayoutMode = "flow";
+  backButton.Label = "Back To Lobby";
+  backButton.Padding = "10px 14px";
+  backButton.BackgroundColor = "#3e4c78";
+  backButton.BorderColor = "#5e73b0";
+  backButton.BorderRadius = 8;
+
+  const titleGroupNode = CreateChild(topRowNode, "TitleGroup");
+  const titleGroupPanel = titleGroupNode.AddComponent(Panel);
+  titleGroupPanel.LayoutMode = "flow";
+  titleGroupPanel.Direction = "column";
+  titleGroupPanel.AlignItems = "flex-end";
+  titleGroupPanel.Gap = 2;
+
+  const machineTitleText = CreateLabel(titleGroupNode, "MachineTitle", "Machine --", 26);
+  machineTitleText.FontWeight = "700";
+  machineTitleText.TextAlign = "right";
+
+  const machineStatusText = CreateLabel(titleGroupNode, "MachineStatus", "Status: BASE", 14);
+  machineStatusText.Color = "#95d79f";
+  machineStatusText.TextAlign = "right";
+
+  const walletRowNode = CreateChild(pageRoot, "WalletRow");
+  const walletRowPanel = walletRowNode.AddComponent(Panel);
+  walletRowPanel.LayoutMode = "flow";
+  walletRowPanel.Direction = "row";
+  walletRowPanel.Gap = 12;
+  walletRowPanel.AlignItems = "center";
+  walletRowPanel.JustifyContent = "space-between";
+  walletRowPanel.BackgroundColor = "rgba(21, 30, 56, 0.62)";
+  walletRowPanel.BorderColor = "#39496f";
+  walletRowPanel.BorderWidth = 1;
+  walletRowPanel.BorderRadius = 10;
+  walletRowPanel.Padding = 12;
+  SetRect(walletRowNode, 0, 0, canvas.width - 48, 86);
+
+  const balanceText = CreateLabel(walletRowNode, "BalanceText", "Balance: 0", 18);
+  balanceText.FontWeight = "600";
+
+  const betText = CreateLabel(walletRowNode, "BetText", "Bet: 0", 18);
+  betText.FontWeight = "600";
+
+  const totalRewardText = CreateLabel(walletRowNode, "TotalRewardText", "Total Reward: 0", 18);
+  totalRewardText.FontWeight = "600";
+  totalRewardText.TextAlign = "right";
+
+  const boardNode = CreateChild(pageRoot, "SlotBoard");
+  const boardPanel = boardNode.AddComponent(Panel);
+  boardPanel.LayoutMode = "flow";
+  boardPanel.Direction = "column";
+  boardPanel.AlignItems = "center";
+  boardPanel.Gap = 10;
+  boardPanel.Padding = 12;
+  boardPanel.BackgroundColor = "rgba(8, 12, 24, 0.72)";
+  boardPanel.BorderColor = "#475377";
+  boardPanel.BorderWidth = 1;
+  boardPanel.BorderRadius = 12;
+  SetRect(boardNode, 0, 0, 400, 330);
+
+  const cellTexts: Text[] = [];
+  const cellPanels: Panel[] = [];
+  for (let row = 0; row < 3; row += 1) {
+    const rowNode = CreateChild(boardNode, `Row-${row}`);
+    const rowPanel = rowNode.AddComponent(Panel);
+    rowPanel.LayoutMode = "flow";
+    rowPanel.Direction = "row";
+    rowPanel.Gap = 10;
+    rowPanel.AlignItems = "center";
+
+    for (let column = 0; column < 3; column += 1) {
+      const index = row * 3 + column;
+      const cellNode = CreateChild(rowNode, `Cell-${index}`);
+      const cellPanel = cellNode.AddComponent(Panel);
+      cellPanel.LayoutMode = "flow";
+      cellPanel.Direction = "column";
+      cellPanel.AlignItems = "center";
+      cellPanel.JustifyContent = "center";
+      cellPanel.BackgroundColor = "#1e2a4c";
+      cellPanel.BorderColor = "#4a5e91";
+      cellPanel.BorderWidth = 1;
+      cellPanel.BorderRadius = 8;
+      SetRect(cellNode, 0, 0, 110, 84);
+      cellPanels.push(cellPanel);
+
+      const symbolText = CreateLabel(cellNode, "Symbol", "-", 28);
+      symbolText.FontWeight = "700";
+      symbolText.TextAlign = "center";
+      cellTexts.push(symbolText);
+    }
+  }
+
+  const actionRowNode = CreateChild(pageRoot, "ActionRow");
+  const actionRowPanel = actionRowNode.AddComponent(Panel);
+  actionRowPanel.LayoutMode = "flow";
+  actionRowPanel.Direction = "row";
+  actionRowPanel.AlignItems = "center";
+  actionRowPanel.JustifyContent = "center";
+  actionRowPanel.Gap = 10;
+  SetRect(actionRowNode, 0, 0, canvas.width - 48, 64);
+
+  const subBetNode = CreateChild(actionRowNode, "SubBetButton");
+  const subBetButton = subBetNode.AddComponent(Button);
+  subBetButton.LayoutMode = "flow";
+  subBetButton.Label = "- Bet";
+  subBetButton.Padding = "10px 12px";
+  subBetButton.BackgroundColor = "#3e4c78";
+  subBetButton.BorderColor = "#5e73b0";
+  subBetButton.BorderRadius = 8;
+
+  const addBetNode = CreateChild(actionRowNode, "AddBetButton");
+  const addBetButton = addBetNode.AddComponent(Button);
+  addBetButton.LayoutMode = "flow";
+  addBetButton.Label = "+ Bet";
+  addBetButton.Padding = "10px 12px";
+  addBetButton.BackgroundColor = "#3e4c78";
+  addBetButton.BorderColor = "#5e73b0";
+  addBetButton.BorderRadius = 8;
+
+  const spinNode = CreateChild(actionRowNode, "SpinButton");
+  const spinButton = spinNode.AddComponent(Button);
+  spinButton.LayoutMode = "flow";
+  spinButton.Label = "SPIN";
+  spinButton.FontSize = 20;
+  spinButton.Padding = "10px 20px";
+  spinButton.BackgroundColor = "#2f8d48";
+  spinButton.BorderColor = "#37aa56";
+  spinButton.BorderRadius = 9;
+
+  const showRuleNode = CreateChild(actionRowNode, "ShowRuleButton");
+  const showRuleButton = showRuleNode.AddComponent(Button);
+  showRuleButton.LayoutMode = "flow";
+  showRuleButton.Label = "Show Rule";
+  showRuleButton.Padding = "10px 12px";
+  showRuleButton.BackgroundColor = "#4f5d8f";
+  showRuleButton.BorderColor = "#7a8fd5";
+  showRuleButton.BorderRadius = 8;
+
+  const rewardText = CreateLabel(pageRoot, "RewardText", "Press SPIN to play.", 16);
+  rewardText.Color = "#95a6df";
+  rewardText.TextAlign = "center";
+
+  const ruleOverlay = CreateChild(pageRoot, "RuleOverlay");
+  const overlayPanel = ruleOverlay.AddComponent(Panel);
+  overlayPanel.LayoutMode = "absolute";
+  overlayPanel.Direction = "column";
+  overlayPanel.AlignItems = "center";
+  overlayPanel.JustifyContent = "center";
+  overlayPanel.BackgroundColor = "rgba(4, 6, 12, 0.8)";
+  SetRect(ruleOverlay, 0, 0, canvas.width, canvas.height, 0, 0);
+
+  const ruleCardNode = CreateChild(ruleOverlay, "RuleCard");
+  const ruleCardPanel = ruleCardNode.AddComponent(Panel);
+  ruleCardPanel.LayoutMode = "flow";
+  ruleCardPanel.Direction = "column";
+  ruleCardPanel.Gap = 12;
+  ruleCardPanel.Padding = 18;
+  ruleCardPanel.BackgroundColor = "#1b2541";
+  ruleCardPanel.BorderColor = "#5a6b9d";
+  ruleCardPanel.BorderWidth = 1;
+  ruleCardPanel.BorderRadius = 10;
+  SetRect(ruleCardNode, canvas.width / 2, canvas.height / 2, 640, 380);
+
+  const ruleTitle = CreateLabel(ruleCardNode, "RuleTitle", "Slot Rule", 24);
+  ruleTitle.FontWeight = "700";
+  ruleTitle.TextAlign = "center";
+
+  const ruleBody = CreateLabel(ruleCardNode, "RuleBody", RULE_TEXT, 14);
+  ruleBody.Color = "#cad6ff";
+  ruleBody.TextAlign = "left";
+
+  const closeRuleNode = CreateChild(ruleCardNode, "CloseRuleButton");
+  const closeRuleButton = closeRuleNode.AddComponent(Button);
+  closeRuleButton.LayoutMode = "flow";
+  closeRuleButton.Label = "Close";
+  closeRuleButton.Padding = "10px 14px";
+  closeRuleButton.BackgroundColor = "#4f5d8f";
+  closeRuleButton.BorderColor = "#7a8fd5";
+  closeRuleButton.BorderRadius = 8;
+
+  ruleOverlay.SetActive(false);
+
+  return {
+    root: pageRoot,
+    machineTitleText,
+    machineStatusText,
+    balanceText,
+    betText,
+    totalRewardText,
+    rewardText,
+    spinButton,
+    addBetButton,
+    subBetButton,
+    showRuleButton,
+    backButton,
+    closeRuleButton,
+    ruleOverlay,
+    cellTexts,
+    cellPanels,
   };
 }
 
@@ -278,11 +597,21 @@ const uiCanvas = uiRoot.AddComponent(Canvas);
 uiCanvas.LayoutMode = "absolute";
 uiCanvas.BackgroundColor = "transparent";
 
+const machines: MachineEntry[] = Array.from({ length: 10 }, (_, index) => ({
+  id: index + 1,
+  status: "BASE",
+}));
+
 const loginView = BuildLoginPage(uiRoot, canvas);
-const lobbyView = BuildLobbyPage(uiRoot, canvas);
-lobbyView.root.SetActive(false);
+const machineView = BuildMachinePage(uiRoot, canvas);
+let lobbyView: LobbyViewRefs;
 
 let loginMode: LoginMode = "email";
+let selectedMachine: MachineEntry | null = null;
+let balance = 1000;
+let currentBet = 10;
+let totalRewards = 0;
+let currentGrid: SlotSymbol[] = Array.from({ length: 9 }, () => "A");
 
 const ActivateTabButton = (button: Button, active: boolean): void => {
   button.BackgroundColor = active ? "#3f8cff" : "#2d3552";
@@ -299,6 +628,61 @@ const ApplyLoginMode = (): void => {
   loginView.statusText.Value = isEmailMode ? "Email mode is active." : "Phone mode is active.";
   loginView.statusText.Color = "#9ba8d5";
 };
+
+const UpdateMachineHud = (): void => {
+  machineView.balanceText.Value = `Balance: ${balance}`;
+  machineView.betText.Value = `Bet: ${currentBet}`;
+  machineView.totalRewardText.Value = `Total Reward: ${totalRewards}`;
+};
+
+const ResetCellHighlight = (): void => {
+  for (const cellPanel of machineView.cellPanels) {
+    cellPanel.BorderColor = "#4a5e91";
+    cellPanel.BorderWidth = 1;
+  }
+};
+
+const RenderGrid = (grid: readonly SlotSymbol[]): void => {
+  for (let index = 0; index < machineView.cellTexts.length; index += 1) {
+    machineView.cellTexts[index].Value = grid[index];
+  }
+};
+
+const HighlightWinningLines = (lineIndices: readonly number[]): void => {
+  for (const lineIndex of lineIndices) {
+    for (const cellIndex of PAYLINES[lineIndex]) {
+      const cellPanel = machineView.cellPanels[cellIndex];
+      cellPanel.BorderColor = "#ffd76a";
+      cellPanel.BorderWidth = 2;
+    }
+  }
+};
+
+const SetRewardMessage = (message: string, color = "#95a6df"): void => {
+  machineView.rewardText.Value = message;
+  machineView.rewardText.Color = color;
+};
+
+const OpenMachinePage = (machine: MachineEntry): void => {
+  selectedMachine = machine;
+  machineView.machineTitleText.Value = `Machine ${machine.id.toString().padStart(2, "0")}`;
+  machineView.machineStatusText.Value = `Status: ${machine.status}`;
+  lobbyView.root.SetActive(false);
+  machineView.root.SetActive(true);
+  machineView.ruleOverlay.SetActive(false);
+  UpdateMachineHud();
+  ResetCellHighlight();
+  RenderGrid(currentGrid);
+  SetRewardMessage("Press SPIN to play.");
+  Debug.Log(`Enter machine ${machine.id.toString().padStart(2, "0")} with status ${machine.status}.`);
+};
+
+lobbyView = BuildLobbyPage(uiRoot, canvas, machines, (machine) => {
+  OpenMachinePage(machine);
+});
+
+lobbyView.root.SetActive(false);
+machineView.root.SetActive(false);
 
 const HandleLogin = (): void => {
   if (loginMode === "email") {
@@ -340,6 +724,51 @@ const HandleLogin = (): void => {
   lobbyView.root.SetActive(true);
 };
 
+const ClampBet = (nextBet: number): number => {
+  if (nextBet < 1) {
+    return 1;
+  }
+  if (nextBet > 100) {
+    return 100;
+  }
+  return nextBet;
+};
+
+const ChangeBet = (offset: number): void => {
+  currentBet = ClampBet(currentBet + offset);
+  UpdateMachineHud();
+};
+
+const RunSpin = (): void => {
+  if (selectedMachine === null) {
+    SetRewardMessage("Please select a machine from lobby.", "#ff8f8f");
+    return;
+  }
+
+  if (balance < currentBet) {
+    SetRewardMessage("Insufficient balance.", "#ff8f8f");
+    return;
+  }
+
+  balance -= currentBet;
+  currentGrid = SpinSymbols();
+  const result = EvaluatePaylines(currentGrid, currentBet);
+  balance += result.totalWin;
+  totalRewards += result.totalWin;
+
+  RenderGrid(currentGrid);
+  ResetCellHighlight();
+  HighlightWinningLines(result.winningLines);
+  UpdateMachineHud();
+
+  if (result.totalWin > 0) {
+    const lineText = result.winningLines.map((lineIndex) => PAYLINE_NAMES[lineIndex]).join(", ");
+    SetRewardMessage(`WIN +${result.totalWin}. Payline: ${lineText}`, "#95d79f");
+  } else {
+    SetRewardMessage("No reward this spin.", "#95a6df");
+  }
+};
+
 loginView.emailModeButton.OnClick.AddListener(() => {
   loginMode = "email";
   ApplyLoginMode();
@@ -354,7 +783,36 @@ loginView.submitButton.OnClick.AddListener(() => {
   HandleLogin();
 });
 
+machineView.subBetButton.OnClick.AddListener(() => {
+  ChangeBet(-1);
+});
+
+machineView.addBetButton.OnClick.AddListener(() => {
+  ChangeBet(1);
+});
+
+machineView.spinButton.OnClick.AddListener(() => {
+  RunSpin();
+});
+
+machineView.showRuleButton.OnClick.AddListener(() => {
+  machineView.ruleOverlay.SetActive(true);
+});
+
+machineView.closeRuleButton.OnClick.AddListener(() => {
+  machineView.ruleOverlay.SetActive(false);
+});
+
+machineView.backButton.OnClick.AddListener(() => {
+  machineView.ruleOverlay.SetActive(false);
+  machineView.root.SetActive(false);
+  lobbyView.root.SetActive(true);
+});
+
 ApplyLoginMode();
+UpdateMachineHud();
+RenderGrid(currentGrid);
+SetRewardMessage("Press SPIN to play.");
 
 engine.scene.AddGameObject(uiRoot);
 engine.Start();
