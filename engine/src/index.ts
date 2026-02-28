@@ -802,6 +802,7 @@ export abstract class UIBehaviour<TElement extends HTMLElement = HTMLElement> ex
   public override OnDisable(): void {
     if (this.domElement !== null) {
       this.domElement.hidden = true;
+      this.domElement.style.display = "none";
     }
   }
 
@@ -895,11 +896,14 @@ export abstract class UIBehaviour<TElement extends HTMLElement = HTMLElement> ex
     }
 
     const isVisible = this.Visible && this.enabled && this.gameObject.activeInHierarchy;
-    this.domElement.hidden = !isVisible;
     if (!isVisible) {
+      this.domElement.hidden = true;
+      this.domElement.style.display = "none";
       return;
     }
 
+    this.domElement.hidden = false;
+    this.domElement.style.removeProperty("display");
     this.domElement.style.pointerEvents = this.Interactable ? "auto" : "none";
     this.ApplyRectTransformStyle(this.domElement);
     this.OnApplyStyle(this.domElement);
