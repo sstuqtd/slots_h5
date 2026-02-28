@@ -651,8 +651,9 @@ export abstract class UIBehaviour<TElement extends HTMLElement = HTMLElement> ex
     }
 
     const canvases = scene.GetComponentsInScene(Canvas);
-    if (canvases.length > 0) {
-      return canvases[0].ContentElement;
+    const parentCanvas = canvases.find((canvas) => canvas !== this);
+    if (parentCanvas !== undefined) {
+      return parentCanvas.ContentElement;
     }
     return scene.engine.UIRootElement;
   }
