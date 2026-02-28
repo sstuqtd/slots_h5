@@ -153,6 +153,8 @@ const MACHINE_ROWS = 3;
 const MACHINE_MAX_COLUMNS = 4;
 const MACHINE3_REEL_COUNT = 3;
 const MACHINE4_REEL_COUNT = 4;
+const MACHINE_VIEW_CENTER_WIDTH = 760;
+const EDITOR_SIDE_MARGIN = 16;
 
 const GRID_CONFIG_3X3: MachineGridConfig = {
   rows: MACHINE_ROWS,
@@ -775,7 +777,9 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   pagePanel.LayoutMode = "absolute";
   pagePanel.Direction = "column";
   pagePanel.Gap = 14;
-  pagePanel.Padding = 24;
+  pagePanel.Padding = 20;
+  pagePanel.AlignItems = "center";
+  pagePanel.JustifyContent = "center";
   pagePanel.BackgroundColor = "linear-gradient(180deg, #10192f 0%, #0b1223 100%)";
   SetRect(pageRoot, 0, 0, canvas.width, canvas.height, 0, 0);
 
@@ -785,7 +789,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   topRowPanel.Direction = "row";
   topRowPanel.AlignItems = "center";
   topRowPanel.JustifyContent = "space-between";
-  SetRect(topRowNode, 0, 0, canvas.width - 48, 68);
+  SetRect(topRowNode, 0, 0, MACHINE_VIEW_CENTER_WIDTH, 68);
 
   const leftControlNode = CreateChild(topRowNode, "LeftControlRow");
   const leftControlPanel = leftControlNode.AddComponent(Panel);
@@ -865,7 +869,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   walletRowPanel.BorderWidth = 1;
   walletRowPanel.BorderRadius = 10;
   walletRowPanel.Padding = 12;
-  SetRect(walletRowNode, 0, 0, canvas.width - 48, 86);
+  SetRect(walletRowNode, 0, 0, MACHINE_VIEW_CENTER_WIDTH, 86);
 
   const balanceText = CreateLabel(walletRowNode, "BalanceText", "Balance: 0", 18);
   balanceText.FontWeight = "600";
@@ -904,7 +908,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   machine4ModeRowPanel.BorderColor = "#39496f";
   machine4ModeRowPanel.BorderWidth = 1;
   machine4ModeRowPanel.BorderRadius = 10;
-  SetRect(machine4ModeRowNode, 0, 0, canvas.width - 48, 64);
+  SetRect(machine4ModeRowNode, 0, 0, MACHINE_VIEW_CENTER_WIDTH, 64);
 
   const machine4ModeLabel = CreateLabel(machine4ModeRowNode, "Machine4ModeLabel", "Machine 4 Mode:", 16);
   machine4ModeLabel.FontWeight = "600";
@@ -949,7 +953,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   machine4ParamRowPanel.BorderColor = "#4f6096";
   machine4ParamRowPanel.BorderWidth = 1;
   machine4ParamRowPanel.BorderRadius = 10;
-  SetRect(machine4ParamRowNode, 0, 0, canvas.width - 48, 156);
+  SetRect(machine4ParamRowNode, 0, 0, MACHINE_VIEW_CENTER_WIDTH, 156);
 
   const machine4ParamTitle = CreateLabel(machine4ParamRowNode, "Machine4ParamTitle", "Machine4 Reel Params", 14);
   machine4ParamTitle.FontWeight = "700";
@@ -1085,7 +1089,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   actionRowPanel.AlignItems = "center";
   actionRowPanel.JustifyContent = "center";
   actionRowPanel.Gap = 10;
-  SetRect(actionRowNode, 0, 0, canvas.width - 48, 64);
+  SetRect(actionRowNode, 0, 0, MACHINE_VIEW_CENTER_WIDTH, 64);
 
   const subBetNode = CreateChild(actionRowNode, "SubBetButton");
   const subBetButton = subBetNode.AddComponent(Button);
@@ -1201,7 +1205,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   hierarchyPanel.BorderColor = "#5f73ab";
   hierarchyPanel.BorderWidth = 1;
   hierarchyPanel.BorderRadius = 10;
-  SetRect(hierarchyPanelNode, 14, 14, 250, 430, 0, 0);
+  SetRect(hierarchyPanelNode, EDITOR_SIDE_MARGIN, canvas.height / 2, 250, 430, 0, 0.5);
 
   const hierarchyHeaderNode = CreateChild(hierarchyPanelNode, "HierarchyHeaderRow");
   const hierarchyHeaderPanel = hierarchyHeaderNode.AddComponent(Panel);
@@ -1249,7 +1253,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   inspectorPanel.BorderColor = "#5f73ab";
   inspectorPanel.BorderWidth = 1;
   inspectorPanel.BorderRadius = 10;
-  SetRect(inspectorPanelNode, canvas.width - 14, 14, 290, 430, 1, 0);
+  SetRect(inspectorPanelNode, canvas.width - EDITOR_SIDE_MARGIN, canvas.height / 2, 290, 430, 1, 0.5);
 
   const inspectorHeaderNode = CreateChild(inspectorPanelNode, "InspectorHeaderRow");
   const inspectorHeaderPanel = inspectorHeaderNode.AddComponent(Panel);
