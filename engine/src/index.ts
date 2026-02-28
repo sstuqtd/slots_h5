@@ -397,7 +397,7 @@ export class GameObject extends Object {
 
   public AddComponent<T extends Component>(componentType: ConcreteComponentType<T>): T {
     if (componentType === (Transform as unknown as ConcreteComponentType<T>)) {
-      return this.transform as T;
+      return this.transform as unknown as T;
     }
 
     const component = new componentType();
