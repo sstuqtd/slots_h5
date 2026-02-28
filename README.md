@@ -34,6 +34,14 @@ python3 -m http.server 8080
 
 - `http://localhost:8080/game/`
 
+## 在线访问（GitHub Pages）
+
+已添加自动发布工作流：`.github/workflows/deploy-pages.yml`  
+部署成功后可访问：
+
+- `https://sstuqtd.github.io/slots_h5/`
+- 游戏直达：`https://sstuqtd.github.io/slots_h5/game/`
+
 ## 当前已提供的 Unity 风格 API（核心子集）
 
 - 对象与组件
