@@ -886,7 +886,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
     const inputNode = CreateChild(parent, name);
     const input = inputNode.AddComponent(InputField);
     input.LayoutMode = "flow";
-    input.InputType = "number";
+    input.InputType = "text";
     input.Placeholder = placeholder;
     SetRect(inputNode, 0, 0, width, 34);
     return input;
