@@ -81,7 +81,11 @@ python3 -m http.server 8080
   - `InputField`
   - `Image`
   - `ScrollRect`
+  - `CurveEditor`
   - `UnityEvent`
+- 曲线系统（新增）
+  - `Keyframe`
+  - `AnimationCurve`（`Evaluate`、WrapMode、关键帧编辑）
 
 生命周期支持：
 

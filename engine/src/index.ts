@@ -178,6 +178,237 @@ export class Mathf {
   }
 }
 
+export type WrapMode = "Clamp" | "Loop" | "PingPong";
+
+export class Keyframe {
+  public time: number;
+  public value: number;
+  public inTangent: number;
+  public outTangent: number;
+
+  public constructor(time: number, value: number, inTangent = 0, outTangent = 0) {
+    this.time = time;
+    this.value = value;
+    this.inTangent = inTangent;
+    this.outTangent = outTangent;
+  }
+
+  public Clone(): Keyframe {
+    return new Keyframe(this.time, this.value, this.inTangent, this.outTangent);
+  }
+}
+
+export class AnimationCurve {
+  private readonly keys: Keyframe[] = [];
+  public preWrapMode: WrapMode = "Clamp";
+  public postWrapMode: WrapMode = "Clamp";
+
+  public constructor(keys: readonly Keyframe[] = [new Keyframe(0, 0), new Keyframe(1, 1)]) {
+    this.keys = keys.map((keyframe) => keyframe.Clone());
+    this.SortKeys();
+  }
+
+  public get length(): number {
+    return this.keys.length;
+  }
+
+  public get Keys(): readonly Keyframe[] {
+    return this.keys;
+  }
+
+  public Clone(): AnimationCurve {
+    const clone = new AnimationCurve(this.keys);
+    clone.preWrapMode = this.preWrapMode;
+    clone.postWrapMode = this.postWrapMode;
+    return clone;
+  }
+
+  public Evaluate(time: number): number {
+    if (this.keys.length === 0) {
+      return 0;
+    }
+    if (this.keys.length === 1) {
+      return this.keys[0].value;
+    }
+
+    const first = this.keys[0];
+    const last = this.keys[this.keys.length - 1];
+    const wrappedTime = this.ApplyWrap(time, first.time, last.time);
+    if (wrappedTime <= first.time) {
+      return first.value;
+    }
+    if (wrappedTime >= last.time) {
+      return last.value;
+    }
+
+    const rightIndex = this.FindRightKeyIndex(wrappedTime);
+    const leftKey = this.keys[rightIndex - 1];
+    const rightKey = this.keys[rightIndex];
+    return this.EvaluateSegment(leftKey, rightKey, wrappedTime);
+  }
+
+  public AddKey(time: number, value: number, inTangent = 0, outTangent = 0): number {
+    const key = new Keyframe(time, value, inTangent, outTangent);
+    this.keys.push(key);
+    this.SortKeys();
+    return this.keys.indexOf(key);
+  }
+
+  public GetKey(index: number): Keyframe {
+    return this.keys[index].Clone();
+  }
+
+  public SetKey(index: number, key: Keyframe): void {
+    this.keys[index] = key.Clone();
+    this.SortKeys();
+  }
+
+  public MoveKey(index: number, time: number, value: number): number {
+    const existing = this.keys[index];
+    existing.time = time;
+    existing.value = value;
+    this.SortKeys();
+    return this.keys.indexOf(existing);
+  }
+
+  public RemoveKey(index: number): void {
+    this.keys.splice(index, 1);
+  }
+
+  public SortKeys(): void {
+    this.keys.sort((left, right) => left.time - right.time);
+  }
+
+  public SmoothTangents(index: number): void {
+    const length = this.keys.length;
+    if (length === 0 || index < 0 || index >= length) {
+      return;
+    }
+
+    if (length === 1) {
+      this.keys[index].inTangent = 0;
+      this.keys[index].outTangent = 0;
+      return;
+    }
+
+    if (index === 0) {
+      const current = this.keys[index];
+      const next = this.keys[index + 1];
+      const slope = this.ComputeSlope(current, next);
+      current.inTangent = slope;
+      current.outTangent = slope;
+      return;
+    }
+
+    if (index === length - 1) {
+      const previous = this.keys[index - 1];
+      const current = this.keys[index];
+      const slope = this.ComputeSlope(previous, current);
+      current.inTangent = slope;
+      current.outTangent = slope;
+      return;
+    }
+
+    const previous = this.keys[index - 1];
+    const next = this.keys[index + 1];
+    const current = this.keys[index];
+    const dt = next.time - previous.time;
+    const slope = Math.abs(dt) <= Number.EPSILON ? 0 : (next.value - previous.value) / dt;
+    current.inTangent = slope;
+    current.outTangent = slope;
+  }
+
+  public SmoothAllTangents(): void {
+    for (let index = 0; index < this.keys.length; index += 1) {
+      this.SmoothTangents(index);
+    }
+  }
+
+  private ApplyWrap(time: number, minTime: number, maxTime: number): number {
+    if (time < minTime) {
+      return this.WrapTimeByMode(time, minTime, maxTime, this.preWrapMode);
+    }
+    if (time > maxTime) {
+      return this.WrapTimeByMode(time, minTime, maxTime, this.postWrapMode);
+    }
+    return time;
+  }
+
+  private WrapTimeByMode(time: number, minTime: number, maxTime: number, mode: WrapMode): number {
+    if (mode === "Clamp") {
+      return Mathf.Clamp(time, minTime, maxTime);
+    }
+
+    const range = maxTime - minTime;
+    if (Math.abs(range) <= Number.EPSILON) {
+      return minTime;
+    }
+
+    if (mode === "Loop") {
+      return minTime + this.Repeat(time - minTime, range);
+    }
+
+    return minTime + this.PingPong(time - minTime, range);
+  }
+
+  private Repeat(value: number, length: number): number {
+    return value - Math.floor(value / length) * length;
+  }
+
+  private PingPong(value: number, length: number): number {
+    const wrapped = this.Repeat(value, length * 2);
+    return length - Math.abs(wrapped - length);
+  }
+
+  private FindRightKeyIndex(time: number): number {
+    let low = 1;
+    let high = this.keys.length - 1;
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      if (this.keys[mid].time < time) {
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return low;
+  }
+
+  private EvaluateSegment(left: Keyframe, right: Keyframe, time: number): number {
+    const dt = right.time - left.time;
+    if (Math.abs(dt) <= Number.EPSILON) {
+      return left.value;
+    }
+
+    const t = (time - left.time) / dt;
+    const t2 = t * t;
+    const t3 = t2 * t;
+
+    const outTangent = Number.isFinite(left.outTangent)
+      ? left.outTangent
+      : this.ComputeSlope(left, right);
+    const inTangent = Number.isFinite(right.inTangent)
+      ? right.inTangent
+      : this.ComputeSlope(left, right);
+    const m0 = outTangent * dt;
+    const m1 = inTangent * dt;
+
+    const h00 = 2 * t3 - 3 * t2 + 1;
+    const h10 = t3 - 2 * t2 + t;
+    const h01 = -2 * t3 + 3 * t2;
+    const h11 = t3 - t2;
+    return h00 * left.value + h10 * m0 + h01 * right.value + h11 * m1;
+  }
+
+  private ComputeSlope(left: Keyframe, right: Keyframe): number {
+    const dt = right.time - left.time;
+    if (Math.abs(dt) <= Number.EPSILON) {
+      return 0;
+    }
+    return (right.value - left.value) / dt;
+  }
+}
+
 export class Debug {
   public static Log(message: unknown): void {
     console.log(message);
@@ -942,6 +1173,472 @@ export class ScrollRect extends UIBehaviour<HTMLDivElement> {
   }
 }
 
+type CurveRange = {
+  timeMin: number;
+  timeMax: number;
+  valueMin: number;
+  valueMax: number;
+};
+
+type CurveViewport = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+export class CurveEditor extends UIBehaviour<HTMLDivElement> {
+  public override LayoutMode: UILayoutMode = "flow";
+  public AutoFrame = true;
+  public TimeRange = new Vector2(0, 1);
+  public ValueRange = new Vector2(0, 1);
+  public BackgroundColor = "rgba(12, 17, 32, 0.95)";
+  public GridColor = "rgba(122, 141, 191, 0.28)";
+  public AxisColor = "rgba(185, 200, 240, 0.8)";
+  public CurveColor = "#78e7b2";
+  public KeyColor = "#d9e3ff";
+  public SelectedKeyColor = "#ffd76a";
+  public Curve = new AnimationCurve([new Keyframe(0, 0), new Keyframe(1, 1)]);
+  public readonly OnCurveChanged = new UnityEvent<[AnimationCurve]>();
+
+  private canvasElement: HTMLCanvasElement | null = null;
+  private infoElement: HTMLDivElement | null = null;
+  private draggingKeyIndex: number | null = null;
+  private dragRange: CurveRange | null = null;
+
+  private readonly HandlePointerDown = (event: PointerEvent): void => {
+    if (event.button !== 0) {
+      return;
+    }
+    const point = this.GetCanvasPoint(event);
+    if (point === null) {
+      return;
+    }
+
+    const range = this.GetEditorRange();
+    const viewport = this.GetViewport();
+    const hitIndex = this.FindNearestKeyIndex(point, range, viewport, 10);
+    if (hitIndex === null) {
+      return;
+    }
+
+    this.draggingKeyIndex = hitIndex;
+    this.dragRange = range;
+    this.canvasElement?.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+
+  private readonly HandlePointerMove = (event: PointerEvent): void => {
+    if (this.draggingKeyIndex === null) {
+      return;
+    }
+
+    const point = this.GetCanvasPoint(event);
+    if (point === null) {
+      return;
+    }
+
+    const range = this.dragRange ?? this.GetEditorRange();
+    const viewport = this.GetViewport();
+    const time = this.MapXToTime(point.x, range, viewport);
+    const value = this.MapYToValue(point.y, range, viewport);
+    this.draggingKeyIndex = this.Curve.MoveKey(this.draggingKeyIndex, time, value);
+    this.Curve.SmoothAllTangents();
+    this.EmitCurveChanged();
+    this.DrawEditor();
+  };
+
+  private readonly HandlePointerUp = (): void => {
+    this.draggingKeyIndex = null;
+    this.dragRange = null;
+  };
+
+  private readonly HandleDoubleClick = (event: MouseEvent): void => {
+    const point = this.GetCanvasPoint(event);
+    if (point === null) {
+      return;
+    }
+
+    const range = this.GetEditorRange();
+    const viewport = this.GetViewport();
+    const time = this.MapXToTime(point.x, range, viewport);
+    const value = this.MapYToValue(point.y, range, viewport);
+    this.Curve.AddKey(time, value);
+    this.Curve.SmoothAllTangents();
+    this.EmitCurveChanged();
+    this.DrawEditor();
+  };
+
+  private readonly HandleContextMenu = (event: MouseEvent): void => {
+    event.preventDefault();
+    const point = this.GetCanvasPoint(event);
+    if (point === null || this.Curve.length <= 2) {
+      return;
+    }
+
+    const range = this.GetEditorRange();
+    const viewport = this.GetViewport();
+    const hitIndex = this.FindNearestKeyIndex(point, range, viewport, 10);
+    if (hitIndex === null) {
+      return;
+    }
+    this.Curve.RemoveKey(hitIndex);
+    this.Curve.SmoothAllTangents();
+    this.EmitCurveChanged();
+    this.DrawEditor();
+  };
+
+  public SetCurve(curve: AnimationCurve): void {
+    this.Curve = curve.Clone();
+    this.Curve.SortKeys();
+    this.DrawEditor();
+  }
+
+  public GetCurve(): AnimationCurve {
+    return this.Curve.Clone();
+  }
+
+  protected override CreateElement(): HTMLDivElement {
+    const container = document.createElement("div");
+    const info = document.createElement("div");
+    const canvas = document.createElement("canvas");
+    canvas.width = 460;
+    canvas.height = 260;
+    canvas.style.width = "100%";
+    canvas.style.height = "260px";
+    canvas.style.touchAction = "none";
+    canvas.style.cursor = "crosshair";
+    canvas.addEventListener("pointerdown", this.HandlePointerDown);
+    canvas.addEventListener("pointermove", this.HandlePointerMove);
+    canvas.addEventListener("pointerup", this.HandlePointerUp);
+    canvas.addEventListener("pointercancel", this.HandlePointerUp);
+    canvas.addEventListener("dblclick", this.HandleDoubleClick);
+    canvas.addEventListener("contextmenu", this.HandleContextMenu);
+    container.appendChild(info);
+    container.appendChild(canvas);
+    this.infoElement = info;
+    this.canvasElement = canvas;
+    return container;
+  }
+
+  public override OnDestroy(): void {
+    if (this.canvasElement !== null) {
+      this.canvasElement.removeEventListener("pointerdown", this.HandlePointerDown);
+      this.canvasElement.removeEventListener("pointermove", this.HandlePointerMove);
+      this.canvasElement.removeEventListener("pointerup", this.HandlePointerUp);
+      this.canvasElement.removeEventListener("pointercancel", this.HandlePointerUp);
+      this.canvasElement.removeEventListener("dblclick", this.HandleDoubleClick);
+      this.canvasElement.removeEventListener("contextmenu", this.HandleContextMenu);
+    }
+    super.OnDestroy();
+  }
+
+  protected override OnApplyStyle(element: HTMLDivElement): void {
+    element.style.display = "flex";
+    element.style.flexDirection = "column";
+    element.style.gap = "8px";
+    element.style.padding = "10px";
+    element.style.background = this.BackgroundColor;
+    element.style.border = "1px solid rgba(110, 125, 175, 0.45)";
+    element.style.borderRadius = "10px";
+    element.style.minHeight = "304px";
+
+    if (this.infoElement !== null) {
+      this.infoElement.style.fontSize = "12px";
+      this.infoElement.style.color = "#b7c5f0";
+      this.infoElement.style.fontFamily = "monospace";
+    }
+
+    this.DrawEditor();
+  }
+
+  private EmitCurveChanged(): void {
+    this.OnCurveChanged.Invoke(this.Curve.Clone());
+  }
+
+  private DrawEditor(): void {
+    const canvas = this.canvasElement;
+    if (canvas === null) {
+      return;
+    }
+
+    const containerWidth = canvas.clientWidth > 0 ? canvas.clientWidth : 460;
+    const containerHeight = canvas.clientHeight > 0 ? canvas.clientHeight : 260;
+    const width = Math.max(220, Math.floor(containerWidth));
+    const height = Math.max(180, Math.floor(containerHeight));
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+
+    const context = canvas.getContext("2d");
+    if (context === null) {
+      return;
+    }
+
+    const range = this.dragRange ?? this.GetEditorRange();
+    const viewport = this.GetViewport();
+    this.DrawBackground(context, canvas, viewport);
+    this.DrawGrid(context, range, viewport);
+    this.DrawCurve(context, range, viewport);
+    this.DrawKeys(context, range, viewport);
+    this.UpdateInfo(range);
+  }
+
+  private DrawBackground(
+    context: CanvasRenderingContext2D,
+    canvas: HTMLCanvasElement,
+    viewport: CurveViewport,
+  ): void {
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "rgba(5, 9, 18, 0.75)";
+    context.fillRect(viewport.left, viewport.top, viewport.width, viewport.height);
+    context.strokeStyle = "rgba(120, 140, 190, 0.5)";
+    context.lineWidth = 1;
+    context.strokeRect(viewport.left, viewport.top, viewport.width, viewport.height);
+  }
+
+  private DrawGrid(
+    context: CanvasRenderingContext2D,
+    range: CurveRange,
+    viewport: CurveViewport,
+  ): void {
+    context.strokeStyle = this.GridColor;
+    context.lineWidth = 1;
+    const divisions = 6;
+    for (let i = 1; i < divisions; i += 1) {
+      const t = i / divisions;
+      const x = viewport.left + viewport.width * t;
+      const y = viewport.top + viewport.height * t;
+      context.beginPath();
+      context.moveTo(x, viewport.top);
+      context.lineTo(x, viewport.top + viewport.height);
+      context.stroke();
+
+      context.beginPath();
+      context.moveTo(viewport.left, y);
+      context.lineTo(viewport.left + viewport.width, y);
+      context.stroke();
+    }
+
+    context.strokeStyle = this.AxisColor;
+    context.lineWidth = 1.2;
+    if (range.timeMin <= 0 && range.timeMax >= 0) {
+      const x = this.MapTimeToX(0, range, viewport);
+      context.beginPath();
+      context.moveTo(x, viewport.top);
+      context.lineTo(x, viewport.top + viewport.height);
+      context.stroke();
+    }
+    if (range.valueMin <= 0 && range.valueMax >= 0) {
+      const y = this.MapValueToY(0, range, viewport);
+      context.beginPath();
+      context.moveTo(viewport.left, y);
+      context.lineTo(viewport.left + viewport.width, y);
+      context.stroke();
+    }
+  }
+
+  private DrawCurve(
+    context: CanvasRenderingContext2D,
+    range: CurveRange,
+    viewport: CurveViewport,
+  ): void {
+    const sampleCount = Math.max(64, Math.floor(viewport.width));
+    context.strokeStyle = this.CurveColor;
+    context.lineWidth = 2;
+    context.beginPath();
+    for (let i = 0; i <= sampleCount; i += 1) {
+      const normalized = i / sampleCount;
+      const time = Mathf.Lerp(range.timeMin, range.timeMax, normalized);
+      const value = this.Curve.Evaluate(time);
+      const x = this.MapTimeToX(time, range, viewport);
+      const y = this.MapValueToY(value, range, viewport);
+      if (i === 0) {
+        context.moveTo(x, y);
+      } else {
+        context.lineTo(x, y);
+      }
+    }
+    context.stroke();
+  }
+
+  private DrawKeys(
+    context: CanvasRenderingContext2D,
+    range: CurveRange,
+    viewport: CurveViewport,
+  ): void {
+    const keys = this.Curve.Keys;
+    for (let i = 0; i < keys.length; i += 1) {
+      const key = keys[i];
+      const x = this.MapTimeToX(key.time, range, viewport);
+      const y = this.MapValueToY(key.value, range, viewport);
+      context.fillStyle = i === this.draggingKeyIndex ? this.SelectedKeyColor : this.KeyColor;
+      context.beginPath();
+      context.arc(x, y, 4.8, 0, Math.PI * 2);
+      context.fill();
+      context.strokeStyle = "rgba(15, 18, 27, 0.95)";
+      context.lineWidth = 1;
+      context.stroke();
+    }
+  }
+
+  private UpdateInfo(range: CurveRange): void {
+    if (this.infoElement === null) {
+      return;
+    }
+
+    if (this.draggingKeyIndex !== null) {
+      const key = this.Curve.GetKey(this.draggingKeyIndex);
+      this.infoElement.textContent =
+        `Drag Key ${this.draggingKeyIndex} | time=${key.time.toFixed(3)} value=${key.value.toFixed(3)}`;
+      return;
+    }
+
+    this.infoElement.textContent =
+      `Keys=${this.Curve.length} | time=[${range.timeMin.toFixed(2)}, ${range.timeMax.toFixed(2)}] `
+      + `value=[${range.valueMin.toFixed(2)}, ${range.valueMax.toFixed(2)}] `
+      + "| double click add key | right click delete key";
+  }
+
+  private GetCanvasPoint(event: MouseEvent | PointerEvent): Vector2 | null {
+    if (this.canvasElement === null) {
+      return null;
+    }
+    const rect = this.canvasElement.getBoundingClientRect();
+    if (rect.width <= Number.EPSILON || rect.height <= Number.EPSILON) {
+      return null;
+    }
+    const x = ((event.clientX - rect.left) / rect.width) * this.canvasElement.width;
+    const y = ((event.clientY - rect.top) / rect.height) * this.canvasElement.height;
+    return new Vector2(x, y);
+  }
+
+  private FindNearestKeyIndex(
+    point: Vector2,
+    range: CurveRange,
+    viewport: CurveViewport,
+    radius: number,
+  ): number | null {
+    const radiusSquared = radius * radius;
+    let nearest: number | null = null;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    const keys = this.Curve.Keys;
+    for (let i = 0; i < keys.length; i += 1) {
+      const key = keys[i];
+      const keyX = this.MapTimeToX(key.time, range, viewport);
+      const keyY = this.MapValueToY(key.value, range, viewport);
+      const dx = keyX - point.x;
+      const dy = keyY - point.y;
+      const distanceSquared = dx * dx + dy * dy;
+      if (distanceSquared <= radiusSquared && distanceSquared < nearestDistance) {
+        nearestDistance = distanceSquared;
+        nearest = i;
+      }
+    }
+    return nearest;
+  }
+
+  private GetEditorRange(): CurveRange {
+    if (!this.AutoFrame) {
+      let timeMin = Math.min(this.TimeRange.x, this.TimeRange.y);
+      let timeMax = Math.max(this.TimeRange.x, this.TimeRange.y);
+      let valueMin = Math.min(this.ValueRange.x, this.ValueRange.y);
+      let valueMax = Math.max(this.ValueRange.x, this.ValueRange.y);
+      if (Math.abs(timeMax - timeMin) <= Number.EPSILON) {
+        timeMax = timeMin + 1;
+      }
+      if (Math.abs(valueMax - valueMin) <= Number.EPSILON) {
+        valueMax = valueMin + 1;
+      }
+      return { timeMin, timeMax, valueMin, valueMax };
+    }
+
+    const keys = this.Curve.Keys;
+    if (keys.length === 0) {
+      return {
+        timeMin: 0,
+        timeMax: 1,
+        valueMin: 0,
+        valueMax: 1,
+      };
+    }
+
+    let timeMin = keys[0].time;
+    let timeMax = keys[0].time;
+    let valueMin = keys[0].value;
+    let valueMax = keys[0].value;
+    for (const key of keys) {
+      timeMin = Math.min(timeMin, key.time);
+      timeMax = Math.max(timeMax, key.time);
+      valueMin = Math.min(valueMin, key.value);
+      valueMax = Math.max(valueMax, key.value);
+    }
+
+    const timePadding = Math.max((timeMax - timeMin) * 0.12, 0.1);
+    const valuePadding = Math.max((valueMax - valueMin) * 0.2, 0.1);
+    if (Math.abs(timeMax - timeMin) <= Number.EPSILON) {
+      timeMin -= 0.5;
+      timeMax += 0.5;
+    } else {
+      timeMin -= timePadding;
+      timeMax += timePadding;
+    }
+    if (Math.abs(valueMax - valueMin) <= Number.EPSILON) {
+      valueMin -= 0.5;
+      valueMax += 0.5;
+    } else {
+      valueMin -= valuePadding;
+      valueMax += valuePadding;
+    }
+
+    return { timeMin, timeMax, valueMin, valueMax };
+  }
+
+  private GetViewport(): CurveViewport {
+    const canvas = this.canvasElement;
+    if (canvas === null) {
+      return {
+        left: 32,
+        top: 14,
+        width: 420,
+        height: 220,
+      };
+    }
+
+    const left = 32;
+    const top = 14;
+    const right = 14;
+    const bottom = 26;
+    return {
+      left,
+      top,
+      width: Math.max(50, canvas.width - left - right),
+      height: Math.max(50, canvas.height - top - bottom),
+    };
+  }
+
+  private MapTimeToX(time: number, range: CurveRange, viewport: CurveViewport): number {
+    const normalized = (time - range.timeMin) / (range.timeMax - range.timeMin);
+    return viewport.left + Mathf.Clamp01(normalized) * viewport.width;
+  }
+
+  private MapValueToY(value: number, range: CurveRange, viewport: CurveViewport): number {
+    const normalized = (value - range.valueMin) / (range.valueMax - range.valueMin);
+    return viewport.top + (1 - Mathf.Clamp01(normalized)) * viewport.height;
+  }
+
+  private MapXToTime(x: number, range: CurveRange, viewport: CurveViewport): number {
+    const normalized = Mathf.Clamp01((x - viewport.left) / viewport.width);
+    return Mathf.Lerp(range.timeMin, range.timeMax, normalized);
+  }
+
+  private MapYToValue(y: number, range: CurveRange, viewport: CurveViewport): number {
+    const normalized = 1 - Mathf.Clamp01((y - viewport.top) / viewport.height);
+    return Mathf.Lerp(range.valueMin, range.valueMax, normalized);
+  }
+}
+
 type MonoState = {
   awake: boolean;
   started: boolean;
@@ -1229,7 +1926,10 @@ export const UnityEngine = {
   Time,
   Input,
   Mathf,
+  Keyframe,
+  AnimationCurve,
   Color,
   Vector2,
   Vector3,
+  CurveEditor,
 };
