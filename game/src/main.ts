@@ -45,6 +45,7 @@ type MachineViewRefs = {
   root: GameObject;
   machineTitleText: Text;
   machineStatusText: Text;
+  stateText: Text;
   balanceText: Text;
   betText: Text;
   totalRewardText: Text;
@@ -58,6 +59,15 @@ type MachineViewRefs = {
   ruleOverlay: GameObject;
   cellTexts: Text[];
   cellPanels: Panel[];
+  boardPanel: Panel;
+};
+
+type SpinState = "accelerate" | "constant" | "decelerate" | "callback" | "stop";
+
+type LineWin = {
+  lineIndex: number;
+  amount: number;
+  symbol: SlotSymbol;
 };
 
 type IconRollDirection = "up" | "down";
@@ -83,6 +93,14 @@ const PAYLINES: readonly (readonly [number, number, number])[] = [
 ];
 
 const PAYLINE_NAMES = ["Top", "Middle", "Bottom", "Diagonal LR", "Diagonal RL"];
+
+const SPIN_STATE_LABEL: Record<SpinState, string> = {
+  accelerate: "State: Accelerate",
+  constant: "State: Constant Speed",
+  decelerate: "State: Decelerate",
+  callback: "State: Callback Effect",
+  stop: "State: Stop",
+};
 
 const RULE_TEXT = [
   "Rules:",
@@ -141,20 +159,81 @@ function SpinSymbols(): SlotSymbol[] {
   return Array.from({ length: 9 }, () => RandomSymbol());
 }
 
-function EvaluatePaylines(symbols: SlotSymbol[], bet: number): { totalWin: number; winningLines: number[] } {
+function EvaluatePaylines(symbols: SlotSymbol[], bet: number): { totalWin: number; lineWins: LineWin[] } {
   let totalWin = 0;
-  const winningLines: number[] = [];
+  const lineWins: LineWin[] = [];
   for (let lineIndex = 0; lineIndex < PAYLINES.length; lineIndex += 1) {
     const [a, b, c] = PAYLINES[lineIndex];
     const symbolA = symbols[a];
     const symbolB = symbols[b];
     const symbolC = symbols[c];
     if (symbolA === symbolB && symbolB === symbolC) {
-      totalWin += bet * PAYOUT_MULTIPLIER[symbolA];
-      winningLines.push(lineIndex);
+      const amount = bet * PAYOUT_MULTIPLIER[symbolA];
+      totalWin += amount;
+      lineWins.push({
+        lineIndex,
+        amount,
+        symbol: symbolA,
+      });
     }
   }
-  return { totalWin, winningLines };
+  return { totalWin, lineWins };
+}
+
+function Sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
+function RollGridDownOneStep(grid: readonly SlotSymbol[]): SlotSymbol[] {
+  const next = [...grid];
+  for (let column = 0; column < 3; column += 1) {
+    const topIndex = column;
+    const middleIndex = 3 + column;
+    const bottomIndex = 6 + column;
+    next[bottomIndex] = grid[middleIndex];
+    next[middleIndex] = grid[topIndex];
+    next[topIndex] = RandomSymbol();
+  }
+  return next;
+}
+
+async function RunStateRollingPhase(
+  startGrid: readonly SlotSymbol[],
+  durationMs: number,
+  getStepMs: (progress01: number) => number,
+  onStep: (grid: SlotSymbol[]) => void,
+): Promise<SlotSymbol[]> {
+  let grid = [...startGrid];
+  const start = Date.now();
+  while (true) {
+    const elapsed = Date.now() - start;
+    if (elapsed >= durationMs) {
+      break;
+    }
+    const progress = Math.min(elapsed / durationMs, 1);
+    const stepMs = Math.max(18, Math.round(getStepMs(progress)));
+    await Sleep(stepMs);
+    grid = RollGridDownOneStep(grid);
+    onStep(grid);
+  }
+  return grid;
+}
+
+async function PlayMachine3CallbackEffect(machineView: MachineViewRefs): Promise<void> {
+  const pulses: Array<{ border: string; width: number }> = [
+    { border: "#ffd76a", width: 2 },
+    { border: "#4a5e91", width: 1 },
+    { border: "#ffd76a", width: 2 },
+    { border: "#4a5e91", width: 1 },
+  ];
+
+  for (const pulse of pulses) {
+    machineView.boardPanel.BorderColor = pulse.border;
+    machineView.boardPanel.BorderWidth = pulse.width;
+    await Sleep(90);
+  }
 }
 
 function EnsureMachine2RollStyles(documentRef: Document): void {
@@ -479,6 +558,10 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   machineStatusText.Color = "#95d79f";
   machineStatusText.TextAlign = "right";
 
+  const stateText = CreateLabel(titleGroupNode, "StateText", SPIN_STATE_LABEL.stop, 13);
+  stateText.Color = "#95a6df";
+  stateText.TextAlign = "right";
+
   const walletRowNode = CreateChild(pageRoot, "WalletRow");
   const walletRowPanel = walletRowNode.AddComponent(Panel);
   walletRowPanel.LayoutMode = "flow";
@@ -642,6 +725,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
     root: pageRoot,
     machineTitleText,
     machineStatusText,
+    stateText,
     balanceText,
     betText,
     totalRewardText,
@@ -655,6 +739,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
     ruleOverlay,
     cellTexts,
     cellPanels,
+    boardPanel,
   };
 }
 
@@ -687,6 +772,8 @@ let balance = 1000;
 let currentBet = 10;
 let totalRewards = 0;
 let currentGrid: SlotSymbol[] = Array.from({ length: 9 }, () => "A");
+let spinInProgress = false;
+let winLineLoopToken = 0;
 
 const ActivateTabButton = (button: Button, active: boolean): void => {
   button.BackgroundColor = active ? "#3f8cff" : "#2d3552";
@@ -738,10 +825,90 @@ const SetRewardMessage = (message: string, color = "#95a6df"): void => {
   machineView.rewardText.Color = color;
 };
 
+const SetSpinState = (state: SpinState): void => {
+  machineView.stateText.Value = SPIN_STATE_LABEL[state];
+};
+
+const SetMachineInteractable = (value: boolean): void => {
+  machineView.spinButton.Interactable = value;
+  machineView.addBetButton.Interactable = value;
+  machineView.subBetButton.Interactable = value;
+  machineView.backButton.Interactable = value;
+  machineView.showRuleButton.Interactable = value;
+};
+
+const StopWinLineLoop = (): void => {
+  winLineLoopToken += 1;
+  ResetCellHighlight();
+};
+
+const StartWinLineLoop = (lineWins: readonly LineWin[]): void => {
+  StopWinLineLoop();
+  if (lineWins.length === 0) {
+    return;
+  }
+
+  const orderedWins = [...lineWins].sort((left, right) => left.amount - right.amount);
+  const localToken = winLineLoopToken;
+
+  const Loop = async (): Promise<void> => {
+    while (localToken === winLineLoopToken && machineView.root.activeSelf && selectedMachine?.id === 3) {
+      for (const lineWin of orderedWins) {
+        if (localToken !== winLineLoopToken || !machineView.root.activeSelf || selectedMachine?.id !== 3) {
+          return;
+        }
+
+        ResetCellHighlight();
+        HighlightWinningLines([lineWin.lineIndex]);
+        SetRewardMessage(
+          `Line ${PAYLINE_NAMES[lineWin.lineIndex]} WIN +${lineWin.amount} (${lineWin.symbol})`,
+          "#ffd76a",
+        );
+        await Sleep(680);
+      }
+    }
+  };
+
+  Loop().catch((error: unknown) => {
+    Debug.LogError(error);
+  });
+};
+
+const PlayMachine3SpinByStateMachine = async (finalGrid: readonly SlotSymbol[]): Promise<void> => {
+  let rollingGrid = [...currentGrid];
+
+  SetSpinState("accelerate");
+  rollingGrid = await RunStateRollingPhase(rollingGrid, 520, (progress) => 180 - 120 * progress, (grid) => {
+    currentGrid = grid;
+    RenderGrid(currentGrid);
+  });
+
+  SetSpinState("constant");
+  rollingGrid = await RunStateRollingPhase(rollingGrid, 760, () => 55, (grid) => {
+    currentGrid = grid;
+    RenderGrid(currentGrid);
+  });
+
+  SetSpinState("decelerate");
+  rollingGrid = await RunStateRollingPhase(rollingGrid, 640, (progress) => 60 + 160 * progress, (grid) => {
+    currentGrid = grid;
+    RenderGrid(currentGrid);
+  });
+
+  SetSpinState("callback");
+  await PlayMachine3CallbackEffect(machineView);
+
+  SetSpinState("stop");
+  currentGrid = [...finalGrid];
+  RenderGrid(currentGrid);
+};
+
 const OpenMachinePage = (machine: MachineEntry): void => {
+  StopWinLineLoop();
   selectedMachine = machine;
   machineView.machineTitleText.Value = `Machine ${machine.id.toString().padStart(2, "0")}`;
   machineView.machineStatusText.Value = `Status: ${machine.status}`;
+  SetSpinState("stop");
   lobbyView.root.SetActive(false);
   machineView.root.SetActive(true);
   machineView.ruleOverlay.SetActive(false);
@@ -814,8 +981,13 @@ const ChangeBet = (offset: number): void => {
   UpdateMachineHud();
 };
 
-const RunSpin = (): void => {
-  if (selectedMachine === null) {
+const RunSpin = async (): Promise<void> => {
+  if (spinInProgress) {
+    return;
+  }
+
+  const machine = selectedMachine;
+  if (machine === null) {
     SetRewardMessage("Please select a machine from lobby.", "#ff8f8f");
     return;
   }
@@ -825,22 +997,49 @@ const RunSpin = (): void => {
     return;
   }
 
-  balance -= currentBet;
-  currentGrid = SpinSymbols();
-  const result = EvaluatePaylines(currentGrid, currentBet);
-  balance += result.totalWin;
-  totalRewards += result.totalWin;
+  spinInProgress = true;
+  StopWinLineLoop();
+  machineView.ruleOverlay.SetActive(false);
+  SetMachineInteractable(false);
 
-  RenderGrid(currentGrid);
-  ResetCellHighlight();
-  HighlightWinningLines(result.winningLines);
+  balance -= currentBet;
   UpdateMachineHud();
 
-  if (result.totalWin > 0) {
-    const lineText = result.winningLines.map((lineIndex) => PAYLINE_NAMES[lineIndex]).join(", ");
-    SetRewardMessage(`WIN +${result.totalWin}. Payline: ${lineText}`, "#95d79f");
-  } else {
-    SetRewardMessage("No reward this spin.", "#95a6df");
+  const targetGrid = SpinSymbols();
+  try {
+    if (machine.id === 3) {
+      await PlayMachine3SpinByStateMachine(targetGrid);
+    } else {
+      currentGrid = targetGrid;
+      RenderGrid(currentGrid);
+      SetSpinState("stop");
+    }
+
+    const result = EvaluatePaylines(currentGrid, currentBet);
+    balance += result.totalWin;
+    totalRewards += result.totalWin;
+    ResetCellHighlight();
+    UpdateMachineHud();
+
+    if (result.totalWin > 0) {
+      if (machine.id === 3) {
+        StartWinLineLoop(result.lineWins);
+      } else {
+        HighlightWinningLines(result.lineWins.map((lineWin) => lineWin.lineIndex));
+      }
+
+      const lineText = result.lineWins
+        .slice()
+        .sort((left, right) => left.amount - right.amount)
+        .map((lineWin) => `${PAYLINE_NAMES[lineWin.lineIndex]}(+${lineWin.amount})`)
+        .join(", ");
+      SetRewardMessage(`WIN +${result.totalWin}. ${lineText}`, "#95d79f");
+    } else {
+      SetRewardMessage("No reward this spin.", "#95a6df");
+    }
+  } finally {
+    spinInProgress = false;
+    SetMachineInteractable(true);
   }
 };
 
@@ -879,6 +1078,8 @@ machineView.closeRuleButton.OnClick.AddListener(() => {
 });
 
 machineView.backButton.OnClick.AddListener(() => {
+  StopWinLineLoop();
+  SetSpinState("stop");
   machineView.ruleOverlay.SetActive(false);
   machineView.root.SetActive(false);
   lobbyView.root.SetActive(true);
@@ -887,6 +1088,7 @@ machineView.backButton.OnClick.AddListener(() => {
 ApplyLoginMode();
 UpdateMachineHud();
 RenderGrid(currentGrid);
+SetSpinState("stop");
 SetRewardMessage("Press SPIN to play.");
 
 engine.scene.AddGameObject(uiRoot);
