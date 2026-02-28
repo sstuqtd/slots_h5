@@ -899,7 +899,7 @@ export class ScrollRect extends UIBehaviour<HTMLDivElement> {
 
   public override Interactable = true;
 
-  public get ContentElement(): HTMLDivElement {
+  public override get ContentElement(): HTMLDivElement {
     this.EnsureContentElement();
     return this.contentElement as HTMLDivElement;
   }
