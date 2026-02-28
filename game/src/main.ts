@@ -60,12 +60,22 @@ type MachineViewRefs = {
   showRuleButton: Button;
   backButton: Button;
   editModeButton: Button;
+  hierarchyToggleButton: Button;
+  inspectorToggleButton: Button;
   closeRuleButton: Button;
   ruleOverlayPanel: Panel;
   ruleDismissButton: Button;
   ruleOverlay: GameObject;
   editorRoot: GameObject;
   editorRootPanel: Panel;
+  hierarchyPanelObject: GameObject;
+  inspectorPanelObject: GameObject;
+  hierarchyPanel: Panel;
+  inspectorPanel: Panel;
+  hierarchyDragHandleButton: Button;
+  inspectorDragHandleButton: Button;
+  hierarchyCloseButton: Button;
+  inspectorCloseButton: Button;
   hierarchyButtons: Record<string, Button>;
   inspectorTitleText: Text;
   inspectorBodyText: Text;
@@ -614,7 +624,14 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   topRowPanel.JustifyContent = "space-between";
   SetRect(topRowNode, 0, 0, canvas.width - 48, 68);
 
-  const backButtonNode = CreateChild(topRowNode, "BackButton");
+  const leftControlNode = CreateChild(topRowNode, "LeftControlRow");
+  const leftControlPanel = leftControlNode.AddComponent(Panel);
+  leftControlPanel.LayoutMode = "flow";
+  leftControlPanel.Direction = "row";
+  leftControlPanel.Gap = 8;
+  leftControlPanel.AlignItems = "center";
+
+  const backButtonNode = CreateChild(leftControlNode, "BackButton");
   const backButton = backButtonNode.AddComponent(Button);
   backButton.LayoutMode = "flow";
   backButton.Label = "Back To Lobby";
@@ -623,7 +640,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   backButton.BorderColor = "#5e73b0";
   backButton.BorderRadius = 8;
 
-  const editModeButtonNode = CreateChild(topRowNode, "EditModeButton");
+  const editModeButtonNode = CreateChild(leftControlNode, "EditModeButton");
   const editModeButton = editModeButtonNode.AddComponent(Button);
   editModeButton.LayoutMode = "flow";
   editModeButton.Label = "Edit Mode";
@@ -631,6 +648,24 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   editModeButton.BackgroundColor = "#444f7f";
   editModeButton.BorderColor = "#7385c6";
   editModeButton.BorderRadius = 8;
+
+  const hierarchyToggleButtonNode = CreateChild(leftControlNode, "HierarchyToggleButton");
+  const hierarchyToggleButton = hierarchyToggleButtonNode.AddComponent(Button);
+  hierarchyToggleButton.LayoutMode = "flow";
+  hierarchyToggleButton.Label = "Hierarchy";
+  hierarchyToggleButton.Padding = "10px 12px";
+  hierarchyToggleButton.BackgroundColor = "#445283";
+  hierarchyToggleButton.BorderColor = "#748ccf";
+  hierarchyToggleButton.BorderRadius = 8;
+
+  const inspectorToggleButtonNode = CreateChild(leftControlNode, "InspectorToggleButton");
+  const inspectorToggleButton = inspectorToggleButtonNode.AddComponent(Button);
+  inspectorToggleButton.LayoutMode = "flow";
+  inspectorToggleButton.Label = "Inspector";
+  inspectorToggleButton.Padding = "10px 12px";
+  inspectorToggleButton.BackgroundColor = "#445283";
+  inspectorToggleButton.BorderColor = "#748ccf";
+  inspectorToggleButton.BorderRadius = 8;
 
   const titleGroupNode = CreateChild(topRowNode, "TitleGroup");
   const titleGroupPanel = titleGroupNode.AddComponent(Panel);
@@ -821,6 +856,10 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   closeRuleButton.BorderColor = "#7a8fd5";
   closeRuleButton.BorderRadius = 8;
 
+  ruleDismissButton.Element.style.zIndex = "1";
+  ruleCardPanel.Element.style.zIndex = "2";
+  ruleCardPanel.Element.style.position = "relative";
+
   const editorRoot = CreateChild(pageRoot, "EditorModeRoot");
   const editorRootPanel = editorRoot.AddComponent(Panel);
   editorRootPanel.LayoutMode = "absolute";
@@ -841,8 +880,33 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   hierarchyPanel.BorderRadius = 10;
   SetRect(hierarchyPanelNode, 14, 14, 250, 430, 0, 0);
 
-  const hierarchyTitle = CreateLabel(hierarchyPanelNode, "HierarchyTitle", "Hierarchy", 20);
-  hierarchyTitle.FontWeight = "700";
+  const hierarchyHeaderNode = CreateChild(hierarchyPanelNode, "HierarchyHeaderRow");
+  const hierarchyHeaderPanel = hierarchyHeaderNode.AddComponent(Panel);
+  hierarchyHeaderPanel.LayoutMode = "flow";
+  hierarchyHeaderPanel.Direction = "row";
+  hierarchyHeaderPanel.Gap = 6;
+  hierarchyHeaderPanel.AlignItems = "center";
+  hierarchyHeaderPanel.JustifyContent = "space-between";
+
+  const hierarchyDragHandleNode = CreateChild(hierarchyHeaderNode, "HierarchyDragHandle");
+  const hierarchyDragHandleButton = hierarchyDragHandleNode.AddComponent(Button);
+  hierarchyDragHandleButton.LayoutMode = "flow";
+  hierarchyDragHandleButton.Label = "Hierarchy";
+  hierarchyDragHandleButton.FontSize = 16;
+  hierarchyDragHandleButton.Padding = "6px 10px";
+  hierarchyDragHandleButton.BackgroundColor = "#51639f";
+  hierarchyDragHandleButton.BorderColor = "#8ba2ef";
+  hierarchyDragHandleButton.BorderRadius = 7;
+
+  const hierarchyCloseNode = CreateChild(hierarchyHeaderNode, "HierarchyCloseButton");
+  const hierarchyCloseButton = hierarchyCloseNode.AddComponent(Button);
+  hierarchyCloseButton.LayoutMode = "flow";
+  hierarchyCloseButton.Label = "×";
+  hierarchyCloseButton.FontSize = 16;
+  hierarchyCloseButton.Padding = "6px 10px";
+  hierarchyCloseButton.BackgroundColor = "#6f4a5f";
+  hierarchyCloseButton.BorderColor = "#b8819f";
+  hierarchyCloseButton.BorderRadius = 7;
 
   const hierarchyListNode = CreateChild(hierarchyPanelNode, "HierarchyList");
   const hierarchyList = hierarchyListNode.AddComponent(Panel);
@@ -864,8 +928,33 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   inspectorPanel.BorderRadius = 10;
   SetRect(inspectorPanelNode, canvas.width - 14, 14, 290, 430, 1, 0);
 
-  const inspectorTitle = CreateLabel(inspectorPanelNode, "InspectorTitle", "Inspector", 20);
-  inspectorTitle.FontWeight = "700";
+  const inspectorHeaderNode = CreateChild(inspectorPanelNode, "InspectorHeaderRow");
+  const inspectorHeaderPanel = inspectorHeaderNode.AddComponent(Panel);
+  inspectorHeaderPanel.LayoutMode = "flow";
+  inspectorHeaderPanel.Direction = "row";
+  inspectorHeaderPanel.Gap = 6;
+  inspectorHeaderPanel.AlignItems = "center";
+  inspectorHeaderPanel.JustifyContent = "space-between";
+
+  const inspectorDragHandleNode = CreateChild(inspectorHeaderNode, "InspectorDragHandle");
+  const inspectorDragHandleButton = inspectorDragHandleNode.AddComponent(Button);
+  inspectorDragHandleButton.LayoutMode = "flow";
+  inspectorDragHandleButton.Label = "Inspector";
+  inspectorDragHandleButton.FontSize = 16;
+  inspectorDragHandleButton.Padding = "6px 10px";
+  inspectorDragHandleButton.BackgroundColor = "#51639f";
+  inspectorDragHandleButton.BorderColor = "#8ba2ef";
+  inspectorDragHandleButton.BorderRadius = 7;
+
+  const inspectorCloseNode = CreateChild(inspectorHeaderNode, "InspectorCloseButton");
+  const inspectorCloseButton = inspectorCloseNode.AddComponent(Button);
+  inspectorCloseButton.LayoutMode = "flow";
+  inspectorCloseButton.Label = "×";
+  inspectorCloseButton.FontSize = 16;
+  inspectorCloseButton.Padding = "6px 10px";
+  inspectorCloseButton.BackgroundColor = "#6f4a5f";
+  inspectorCloseButton.BorderColor = "#b8819f";
+  inspectorCloseButton.BorderRadius = 7;
 
   const inspectorTargetTitle = CreateLabel(inspectorPanelNode, "InspectorTargetTitle", "Target: MachinePage", 16);
   inspectorTargetTitle.FontWeight = "600";
@@ -916,12 +1005,22 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
     showRuleButton,
     backButton,
     editModeButton,
+    hierarchyToggleButton,
+    inspectorToggleButton,
     closeRuleButton,
     ruleOverlayPanel: overlayPanel,
     ruleDismissButton,
     ruleOverlay,
     editorRoot,
     editorRootPanel,
+    hierarchyPanelObject: hierarchyPanelNode,
+    inspectorPanelObject: inspectorPanelNode,
+    hierarchyPanel,
+    inspectorPanel,
+    hierarchyDragHandleButton,
+    inspectorDragHandleButton,
+    hierarchyCloseButton,
+    inspectorCloseButton,
     hierarchyButtons,
     inspectorTitleText: inspectorTargetTitle,
     inspectorBodyText,
@@ -965,6 +1064,8 @@ let spinInProgress = false;
 let spinCancellationToken = 0;
 let winLineLoopToken = 0;
 let editorModeEnabled = false;
+let hierarchyPanelVisible = true;
+let inspectorPanelVisible = true;
 let selectedHierarchyKey = "MachinePage";
 
 const ActivateTabButton = (button: Button, active: boolean): void => {
@@ -1029,8 +1130,11 @@ const SetMachineInteractable = (value: boolean): void => {
 };
 
 const SetRuleOverlayVisible = (visible: boolean): void => {
+  Debug.Log(`[UI] Rule overlay visible -> ${visible}`);
   machineView.ruleOverlayPanel.Visible = visible;
   machineView.ruleOverlayPanel.Interactable = visible;
+  machineView.ruleDismissButton.Interactable = visible;
+  machineView.closeRuleButton.Interactable = visible;
 };
 
 const GetHierarchyTargetByKey = (key: string): GameObject => {
@@ -1077,9 +1181,28 @@ const RefreshHierarchyButtonStyles = (): void => {
 };
 
 const SelectHierarchyNode = (key: string): void => {
+  Debug.Log(`[Editor] Select hierarchy node: ${key}`);
   selectedHierarchyKey = key;
   RefreshHierarchyButtonStyles();
   UpdateInspectorForSelection();
+};
+
+const SetHierarchyPanelVisible = (visible: boolean): void => {
+  hierarchyPanelVisible = visible;
+  machineView.hierarchyPanel.Visible = visible;
+  machineView.hierarchyPanel.Interactable = visible;
+  machineView.hierarchyToggleButton.BackgroundColor = visible ? "#5b6fb0" : "#445283";
+  machineView.hierarchyToggleButton.BorderColor = visible ? "#9db4ff" : "#748ccf";
+  Debug.Log(`[Editor] Hierarchy panel visible -> ${visible}`);
+};
+
+const SetInspectorPanelVisible = (visible: boolean): void => {
+  inspectorPanelVisible = visible;
+  machineView.inspectorPanel.Visible = visible;
+  machineView.inspectorPanel.Interactable = visible;
+  machineView.inspectorToggleButton.BackgroundColor = visible ? "#5b6fb0" : "#445283";
+  machineView.inspectorToggleButton.BorderColor = visible ? "#9db4ff" : "#748ccf";
+  Debug.Log(`[Editor] Inspector panel visible -> ${visible}`);
 };
 
 const SetEditorModeEnabled = (enabled: boolean): void => {
@@ -1089,9 +1212,68 @@ const SetEditorModeEnabled = (enabled: boolean): void => {
   machineView.editModeButton.Label = enabled ? "Edit Mode: ON" : "Edit Mode";
   machineView.editModeButton.BackgroundColor = enabled ? "#5b6fb0" : "#444f7f";
   machineView.editModeButton.BorderColor = enabled ? "#9db4ff" : "#7385c6";
+  machineView.hierarchyToggleButton.Interactable = enabled;
+  machineView.inspectorToggleButton.Interactable = enabled;
+  Debug.Log(`[Editor] Edit mode -> ${enabled}`);
   if (enabled) {
+    SetHierarchyPanelVisible(hierarchyPanelVisible);
+    SetInspectorPanelVisible(inspectorPanelVisible);
     SelectHierarchyNode(selectedHierarchyKey);
+    return;
   }
+  machineView.hierarchyPanel.Visible = false;
+  machineView.hierarchyPanel.Interactable = false;
+  machineView.inspectorPanel.Visible = false;
+  machineView.inspectorPanel.Interactable = false;
+};
+
+const MakePanelDraggable = (dragButton: Button, panelObject: GameObject): void => {
+  const handle = dragButton.Element;
+  handle.style.cursor = "grab";
+  let dragging = false;
+  let previousX = 0;
+  let previousY = 0;
+
+  handle.addEventListener("pointerdown", (event) => {
+    if (!editorModeEnabled || event.button !== 0) {
+      return;
+    }
+    dragging = true;
+    previousX = event.clientX;
+    previousY = event.clientY;
+    handle.setPointerCapture(event.pointerId);
+    handle.style.cursor = "grabbing";
+    event.preventDefault();
+  });
+
+  handle.addEventListener("pointermove", (event) => {
+    if (!dragging) {
+      return;
+    }
+    const rectTransform = panelObject.GetComponent(RectTransform);
+    if (rectTransform === null) {
+      return;
+    }
+    const deltaX = event.clientX - previousX;
+    const deltaY = event.clientY - previousY;
+    previousX = event.clientX;
+    previousY = event.clientY;
+    rectTransform.anchoredPosition = rectTransform.anchoredPosition.Add(new Vector2(deltaX, deltaY));
+  });
+
+  handle.addEventListener("pointerup", (event) => {
+    if (!dragging) {
+      return;
+    }
+    dragging = false;
+    handle.releasePointerCapture(event.pointerId);
+    handle.style.cursor = "grab";
+  });
+
+  handle.addEventListener("pointercancel", () => {
+    dragging = false;
+    handle.style.cursor = "grab";
+  });
 };
 
 const StopWinLineLoop = (): void => {
@@ -1271,19 +1453,24 @@ const ChangeBet = (offset: number): void => {
 
 const RunSpin = async (): Promise<void> => {
   if (spinInProgress) {
+    Debug.Log("[Spin] Ignore: spin already in progress.");
     return;
   }
 
   const machine = selectedMachine;
   if (machine === null) {
+    Debug.Log("[Spin] Reject: no selected machine.");
     SetRewardMessage("Please select a machine from lobby.", "#ff8f8f");
     return;
   }
 
   if (balance < currentBet) {
+    Debug.Log("[Spin] Reject: insufficient balance.");
     SetRewardMessage("Insufficient balance.", "#ff8f8f");
     return;
   }
+
+  Debug.Log(`[Spin] Start machine=${machine.id} bet=${currentBet} balance=${balance}`);
 
   spinInProgress = true;
   const localSpinToken = ++spinCancellationToken;
@@ -1307,6 +1494,7 @@ const RunSpin = async (): Promise<void> => {
     }
 
     if (!ShouldContinue()) {
+      Debug.Log("[Spin] Canceled before result.");
       return;
     }
 
@@ -1335,10 +1523,12 @@ const RunSpin = async (): Promise<void> => {
   } finally {
     spinInProgress = false;
     SetMachineInteractable(true);
+    Debug.Log("[Spin] End.");
   }
 };
 
 const GoBackToLobby = (): void => {
+  Debug.Log("[Nav] Back to lobby requested.");
   spinCancellationToken += 1;
   spinInProgress = false;
   selectedMachine = null;
@@ -1349,6 +1539,7 @@ const GoBackToLobby = (): void => {
   SetEditorModeEnabled(false);
   machineView.root.SetActive(false);
   lobbyView.root.SetActive(true);
+  Debug.Log("[Nav] Back to lobby completed.");
 };
 
 loginView.emailModeButton.OnClick.AddListener(() => {
@@ -1378,6 +1569,7 @@ machineView.spinButton.OnClick.AddListener(() => {
 });
 
 machineView.showRuleButton.OnClick.AddListener(() => {
+  Debug.Log("[UI] Show rule.");
   SetRuleOverlayVisible(true);
 });
 
@@ -1391,6 +1583,28 @@ machineView.ruleDismissButton.OnClick.AddListener(() => {
 
 machineView.editModeButton.OnClick.AddListener(() => {
   SetEditorModeEnabled(!editorModeEnabled);
+});
+
+machineView.hierarchyToggleButton.OnClick.AddListener(() => {
+  if (!editorModeEnabled) {
+    return;
+  }
+  SetHierarchyPanelVisible(!hierarchyPanelVisible);
+});
+
+machineView.inspectorToggleButton.OnClick.AddListener(() => {
+  if (!editorModeEnabled) {
+    return;
+  }
+  SetInspectorPanelVisible(!inspectorPanelVisible);
+});
+
+machineView.hierarchyCloseButton.OnClick.AddListener(() => {
+  SetHierarchyPanelVisible(false);
+});
+
+machineView.inspectorCloseButton.OnClick.AddListener(() => {
+  SetInspectorPanelVisible(false);
 });
 
 const hierarchyOrder = ["MachinePage", "TopRow", "WalletRow", "SlotBoard", "ActionRow", "RuleOverlay"];
@@ -1407,11 +1621,16 @@ machineView.backButton.OnClick.AddListener(() => {
   GoBackToLobby();
 });
 
+MakePanelDraggable(machineView.hierarchyDragHandleButton, machineView.hierarchyPanelObject);
+MakePanelDraggable(machineView.inspectorDragHandleButton, machineView.inspectorPanelObject);
+
 ApplyLoginMode();
 UpdateMachineHud();
 RenderGrid(currentGrid);
 SetSpinState("stop");
 SetRuleOverlayVisible(false);
+SetHierarchyPanelVisible(true);
+SetInspectorPanelVisible(true);
 SetEditorModeEnabled(false);
 SelectHierarchyNode("MachinePage");
 SetRewardMessage("Press SPIN to play.");
