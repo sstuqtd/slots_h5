@@ -447,8 +447,9 @@ export class SpriteRenderer extends Renderer {
     }
 
     const worldPosition = this.transform.position;
-    const width = this.Size.x;
-    const height = this.Size.y;
+    const scale = this.transform.localScale;
+    const width = this.Size.x * scale.x;
+    const height = this.Size.y * scale.y;
     const color = typeof this.Color === "string" ? this.Color : this.Color.ToCss();
     context.fillStyle = color;
     context.fillRect(

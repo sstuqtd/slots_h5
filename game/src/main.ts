@@ -13,6 +13,7 @@ import {
 class PlayerController extends MonoBehaviour {
   public moveSpeed = 320;
   private sprite: SpriteRenderer | null = null;
+  private isGreen = true;
 
   public override Start(): void {
     this.sprite = this.gameObject.GetComponent(SpriteRenderer);
@@ -47,8 +48,8 @@ class PlayerController extends MonoBehaviour {
     if (this.sprite === null) {
       return;
     }
-    const isGreen = this.sprite.Color === Color.green;
-    this.sprite.Color = isGreen ? Color.blue : Color.green;
+    this.isGreen = !this.isGreen;
+    this.sprite.Color = this.isGreen ? Color.green : Color.blue;
   }
 }
 
