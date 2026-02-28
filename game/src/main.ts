@@ -76,7 +76,7 @@ type MachineViewRefs = {
   inspectorDragHandleButton: Button;
   hierarchyCloseButton: Button;
   inspectorCloseButton: Button;
-  hierarchyButtons: Record<string, Button>;
+  hierarchyListPanel: Panel;
   inspectorTitleText: Text;
   inspectorBodyText: Text;
   cellTexts: Text[];
@@ -970,29 +970,6 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   inspectorBodyText.Color = "#c6d2f6";
   inspectorBodyText.TextAlign = "left";
 
-  const hierarchyButtons: Record<string, Button> = {};
-  const hierarchyTargets: Array<{ key: string; display: string; target: GameObject }> = [
-    { key: "MachinePage", display: "MachinePage", target: pageRoot },
-    { key: "TopRow", display: "TopRow", target: topRowNode },
-    { key: "WalletRow", display: "WalletRow", target: walletRowNode },
-    { key: "SlotBoard", display: "SlotBoard", target: boardNode },
-    { key: "ActionRow", display: "ActionRow", target: actionRowNode },
-    { key: "RuleOverlay", display: "RuleOverlay", target: ruleOverlay },
-  ];
-
-  for (const item of hierarchyTargets) {
-    const buttonNode = CreateChild(hierarchyListNode, `${item.key}Button`);
-    const button = buttonNode.AddComponent(Button);
-    button.LayoutMode = "flow";
-    button.Label = item.display;
-    button.FontSize = 13;
-    button.Padding = "7px 10px";
-    button.BackgroundColor = "#38446d";
-    button.BorderColor = "#6678b5";
-    button.BorderRadius = 7;
-    hierarchyButtons[item.key] = button;
-  }
-
   return {
     root: pageRoot,
     topRow: topRowNode,
@@ -1028,7 +1005,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
     inspectorDragHandleButton,
     hierarchyCloseButton,
     inspectorCloseButton,
-    hierarchyButtons,
+    hierarchyListPanel: hierarchyList,
     inspectorTitleText: inspectorTargetTitle,
     inspectorBodyText,
     cellTexts,
@@ -1073,7 +1050,9 @@ let winLineLoopToken = 0;
 let editorModeEnabled = false;
 let hierarchyPanelVisible = true;
 let inspectorPanelVisible = true;
-let selectedHierarchyKey = "MachinePage";
+let selectedHierarchyKey = "";
+const hierarchyNodeMap = new Map<string, GameObject>();
+const hierarchyRowMap = new Map<string, HTMLDivElement>();
 
 const ActivateTabButton = (button: Button, active: boolean): void => {
   button.BackgroundColor = active ? "#3f8cff" : "#2d3552";
@@ -1175,22 +1154,48 @@ const SetRuleOverlayVisible = (visible: boolean): void => {
   machineView.closeRuleButton.Interactable = visible;
 };
 
+const GetHierarchyNodeKey = (gameObject: GameObject): string => {
+  return `go-${gameObject.InstanceID}`;
+};
+
+const RebuildHierarchyTree = (): void => {
+  const hierarchyRootElement = machineView.hierarchyListPanel.Element;
+  hierarchyRootElement.innerHTML = "";
+  hierarchyNodeMap.clear();
+  hierarchyRowMap.clear();
+
+  const AppendNode = (gameObject: GameObject, depth: number): void => {
+    const key = GetHierarchyNodeKey(gameObject);
+    hierarchyNodeMap.set(key, gameObject);
+
+    const row = document.createElement("div");
+    row.style.padding = "6px 8px";
+    row.style.paddingLeft = `${8 + depth * 16}px`;
+    row.style.borderRadius = "6px";
+    row.style.cursor = "pointer";
+    row.style.fontSize = "13px";
+    row.style.color = "#d8e3ff";
+    row.style.whiteSpace = "nowrap";
+    row.style.overflow = "hidden";
+    row.style.textOverflow = "ellipsis";
+    const hasChild = gameObject.transform.childCount > 0;
+    row.textContent = `${hasChild ? "▾" : "•"} ${gameObject.name}`;
+    row.addEventListener("click", () => {
+      SelectHierarchyNode(key);
+    });
+    hierarchyRootElement.appendChild(row);
+    hierarchyRowMap.set(key, row);
+
+    for (const childTransform of gameObject.transform.Children) {
+      AppendNode(childTransform.gameObject, depth + 1);
+    }
+  };
+
+  AppendNode(machineView.root, 0);
+};
+
 const GetHierarchyTargetByKey = (key: string): GameObject => {
-  switch (key) {
-    case "TopRow":
-      return machineView.topRow;
-    case "WalletRow":
-      return machineView.walletRow;
-    case "SlotBoard":
-      return machineView.board;
-    case "ActionRow":
-      return machineView.actionRow;
-    case "RuleOverlay":
-      return machineView.ruleOverlay;
-    case "MachinePage":
-    default:
-      return machineView.root;
-  }
+  return hierarchyNodeMap.get(key) ?? machineView.root;
 };
 
 const UpdateInspectorForSelection = (): void => {
@@ -1211,16 +1216,21 @@ const UpdateInspectorForSelection = (): void => {
 };
 
 const RefreshHierarchyButtonStyles = (): void => {
-  for (const [key, button] of Object.entries(machineView.hierarchyButtons)) {
+  for (const [key, row] of hierarchyRowMap.entries()) {
     const active = key === selectedHierarchyKey;
-    button.BackgroundColor = active ? "#5b6fb0" : "#38446d";
-    button.BorderColor = active ? "#9db4ff" : "#6678b5";
+    row.style.background = active ? "#5b6fb0" : "transparent";
+    row.style.color = active ? "#ffffff" : "#d8e3ff";
   }
 };
 
 const SelectHierarchyNode = (key: string): void => {
-  Debug.Log(`[Editor] Select hierarchy node: ${key}`);
-  selectedHierarchyKey = key;
+  const target = hierarchyNodeMap.get(key);
+  if (target === undefined) {
+    selectedHierarchyKey = GetHierarchyNodeKey(machineView.root);
+  } else {
+    selectedHierarchyKey = key;
+    Debug.Log(`[Editor] Select hierarchy node: ${target.name}`);
+  }
   RefreshHierarchyButtonStyles();
   UpdateInspectorForSelection();
 };
@@ -1255,6 +1265,10 @@ const SetEditorModeEnabled = (enabled: boolean): void => {
   machineView.inspectorToggleButton.Interactable = enabled;
   Debug.Log(`[Editor] Edit mode -> ${enabled}`);
   if (enabled) {
+    RebuildHierarchyTree();
+    if (selectedHierarchyKey === "") {
+      selectedHierarchyKey = GetHierarchyNodeKey(machineView.root);
+    }
     SetHierarchyPanelVisible(hierarchyPanelVisible);
     SetInspectorPanelVisible(inspectorPanelVisible);
     SelectHierarchyNode(selectedHierarchyKey);
@@ -1434,7 +1448,9 @@ const OpenMachinePage = (machine: MachineEntry): void => {
   machineView.root.SetActive(true);
   SetRuleOverlayVisible(false);
   SetEditorModeEnabled(false);
-  SelectHierarchyNode("MachinePage");
+  RebuildHierarchyTree();
+  selectedHierarchyKey = GetHierarchyNodeKey(machineView.root);
+  SelectHierarchyNode(selectedHierarchyKey);
   ResetReelVisualTransforms();
   UpdateMachineHud();
   ResetCellHighlight();
@@ -1662,16 +1678,6 @@ machineView.inspectorCloseButton.OnClick.AddListener(() => {
   SetInspectorPanelVisible(false);
 });
 
-const hierarchyOrder = ["MachinePage", "TopRow", "WalletRow", "SlotBoard", "ActionRow", "RuleOverlay"];
-for (const key of hierarchyOrder) {
-  const button = machineView.hierarchyButtons[key];
-  if (button !== undefined) {
-    button.OnClick.AddListener(() => {
-      SelectHierarchyNode(key);
-    });
-  }
-}
-
 machineView.backButton.OnClick.AddListener(() => {
   GoBackToLobby();
 });
@@ -1687,7 +1693,9 @@ SetRuleOverlayVisible(false);
 SetHierarchyPanelVisible(true);
 SetInspectorPanelVisible(true);
 SetEditorModeEnabled(false);
-SelectHierarchyNode("MachinePage");
+RebuildHierarchyTree();
+selectedHierarchyKey = GetHierarchyNodeKey(machineView.root);
+SelectHierarchyNode(selectedHierarchyKey);
 SetRewardMessage("Press SPIN to play.");
 
 engine.scene.AddGameObject(uiRoot);
