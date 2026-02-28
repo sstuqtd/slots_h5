@@ -1246,7 +1246,8 @@ const SetInspectorPanelVisible = (visible: boolean): void => {
 const SetEditorModeEnabled = (enabled: boolean): void => {
   editorModeEnabled = enabled;
   machineView.editorRootPanel.Visible = enabled;
-  machineView.editorRootPanel.Interactable = enabled;
+  // Keep root panel click-through, only child panels handle pointer events.
+  machineView.editorRootPanel.Interactable = false;
   machineView.editModeButton.Label = enabled ? "Edit Mode: ON" : "Edit Mode";
   machineView.editModeButton.BackgroundColor = enabled ? "#5b6fb0" : "#444f7f";
   machineView.editModeButton.BorderColor = enabled ? "#9db4ff" : "#7385c6";
