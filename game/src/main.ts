@@ -63,6 +63,7 @@ type MachineViewRefs = {
   hierarchyToggleButton: Button;
   inspectorToggleButton: Button;
   closeRuleButton: Button;
+  ruleBodyText: Text;
   ruleOverlayPanel: Panel;
   ruleDismissButton: Button;
   ruleOverlay: GameObject;
@@ -97,6 +98,13 @@ type ReelAxis = {
   position: number;
 };
 
+type MachineGridConfig = {
+  rows: number;
+  columns: number;
+  paylines: readonly (readonly number[])[];
+  paylineNames: readonly string[];
+};
+
 type IconRollDirection = "up" | "down";
 
 const SLOT_SYMBOLS: readonly SlotSymbol[] = ["A", "K", "Q", "J", "7", "BAR", "STAR"];
@@ -111,22 +119,35 @@ const PAYOUT_MULTIPLIER: Record<SlotSymbol, number> = {
   STAR: 12,
 };
 
-const PAYLINES: readonly (readonly [number, number, number])[] = [
-  [0, 1, 2],
-  [3, 4, 5],
-  [6, 7, 8],
-  [0, 4, 8],
-  [2, 4, 6],
-];
+const MACHINE_ROWS = 3;
+const MACHINE_MAX_COLUMNS = 4;
+const MACHINE3_REEL_COUNT = 3;
+const MACHINE4_REEL_COUNT = 4;
 
-const PAYLINE_NAMES = ["Top", "Middle", "Bottom", "Diagonal LR", "Diagonal RL"];
-const REEL_COLUMN_CELL_INDICES: readonly (readonly number[])[] = [
-  [0, 3, 6],
-  [1, 4, 7],
-  [2, 5, 8],
-];
-const REEL_AXIS_COUNT = 3;
-const VISIBLE_ROWS = 3;
+const GRID_CONFIG_3X3: MachineGridConfig = {
+  rows: MACHINE_ROWS,
+  columns: MACHINE3_REEL_COUNT,
+  paylines: [
+    [0, 1, 2],
+    [3, 4, 5],
+    [6, 7, 8],
+    [0, 4, 8],
+    [2, 4, 6],
+  ],
+  paylineNames: ["Top", "Middle", "Bottom", "Diagonal LR", "Diagonal RL"],
+};
+
+const GRID_CONFIG_3X4: MachineGridConfig = {
+  rows: MACHINE_ROWS,
+  columns: MACHINE4_REEL_COUNT,
+  paylines: [
+    [0, 1, 2, 3],
+    [4, 5, 6, 7],
+    [8, 9, 10, 11],
+  ],
+  paylineNames: ["Top", "Middle", "Bottom"],
+};
+
 const REEL_STRIP_LENGTH = 24;
 
 const SPIN_STATE_LABEL: Record<SpinState, string> = {
@@ -137,20 +158,22 @@ const SPIN_STATE_LABEL: Record<SpinState, string> = {
   stop: "State: Stop",
 };
 
-const RULE_TEXT = [
-  "Rules:",
-  "1) Spin costs current bet.",
-  "2) Slot board is 3x3.",
-  "3) Paylines:",
-  "   - Top row (0,1,2)",
-  "   - Middle row (3,4,5)",
-  "   - Bottom row (6,7,8)",
-  "   - Diagonal LR (0,4,8)",
-  "   - Diagonal RL (2,4,6)",
-  "4) Three same symbols in one payline wins reward.",
-  "5) Reward = bet x symbol multiplier.",
-  "6) Multipliers: A2 K3 Q4 J5 7x8 BAR10 STAR12.",
-].join("\n");
+const BuildRuleText = (gridConfig: MachineGridConfig): string => {
+  const lines = [
+    "Rules:",
+    "1) Spin costs current bet.",
+    `2) Slot board is ${gridConfig.rows}x${gridConfig.columns}.`,
+    "3) Paylines:",
+  ];
+  for (let lineIndex = 0; lineIndex < gridConfig.paylines.length; lineIndex += 1) {
+    const paylineName = gridConfig.paylineNames[lineIndex] ?? `Line ${lineIndex + 1}`;
+    lines.push(`   - ${paylineName} (${gridConfig.paylines[lineIndex].join(",")})`);
+  }
+  lines.push("4) All symbols in one payline must be the same to win.");
+  lines.push("5) Reward = bet x symbol multiplier.");
+  lines.push("6) Multipliers: A2 K3 Q4 J5 7x8 BAR10 STAR12.");
+  return lines.join("\n");
+};
 
 let machine2RollStyleInjected = false;
 
@@ -190,25 +213,39 @@ function RandomSymbol(): SlotSymbol {
   return SLOT_SYMBOLS[index];
 }
 
-function SpinSymbols(): SlotSymbol[] {
-  return Array.from({ length: 9 }, () => RandomSymbol());
+function SpinSymbols(cellCount: number): SlotSymbol[] {
+  return Array.from({ length: cellCount }, () => RandomSymbol());
 }
 
-function EvaluatePaylines(symbols: SlotSymbol[], bet: number): { totalWin: number; lineWins: LineWin[] } {
+function EvaluatePaylines(
+  symbols: readonly SlotSymbol[],
+  bet: number,
+  gridConfig: MachineGridConfig,
+): { totalWin: number; lineWins: LineWin[] } {
   let totalWin = 0;
   const lineWins: LineWin[] = [];
-  for (let lineIndex = 0; lineIndex < PAYLINES.length; lineIndex += 1) {
-    const [a, b, c] = PAYLINES[lineIndex];
-    const symbolA = symbols[a];
-    const symbolB = symbols[b];
-    const symbolC = symbols[c];
-    if (symbolA === symbolB && symbolB === symbolC) {
-      const amount = bet * PAYOUT_MULTIPLIER[symbolA];
+  for (let lineIndex = 0; lineIndex < gridConfig.paylines.length; lineIndex += 1) {
+    const payline = gridConfig.paylines[lineIndex];
+    const firstSymbol = symbols[payline[0]];
+    if (firstSymbol === undefined) {
+      continue;
+    }
+
+    let allMatched = true;
+    for (let symbolIndex = 1; symbolIndex < payline.length; symbolIndex += 1) {
+      if (symbols[payline[symbolIndex]] !== firstSymbol) {
+        allMatched = false;
+        break;
+      }
+    }
+
+    if (allMatched) {
+      const amount = bet * PAYOUT_MULTIPLIER[firstSymbol];
       totalWin += amount;
       lineWins.push({
         lineIndex,
         amount,
-        symbol: symbolA,
+        symbol: firstSymbol,
       });
     }
   }
@@ -228,14 +265,14 @@ function CreateRandomReelAxis(stripLength = REEL_STRIP_LENGTH): ReelAxis {
   };
 }
 
-function CreateMachine3ReelAxes(): ReelAxis[] {
-  return Array.from({ length: REEL_AXIS_COUNT }, () => CreateRandomReelAxis());
+function CreateReelAxes(columnCount: number): ReelAxis[] {
+  return Array.from({ length: columnCount }, () => CreateRandomReelAxis());
 }
 
-function GetGridFromReelAxes(reelAxes: readonly ReelAxis[]): SlotSymbol[] {
+function GetGridFromReelAxes(reelAxes: readonly ReelAxis[], rowCount: number): SlotSymbol[] {
   const grid: SlotSymbol[] = [];
-  for (let row = 0; row < VISIBLE_ROWS; row += 1) {
-    for (let column = 0; column < REEL_AXIS_COUNT; column += 1) {
+  for (let row = 0; row < rowCount; row += 1) {
+    for (let column = 0; column < reelAxes.length; column += 1) {
       const axis = reelAxes[column];
       const stripLength = axis.strip.length;
       const symbolIndex = (axis.position + row) % stripLength;
@@ -268,14 +305,18 @@ function FindPatternStart(strip: readonly SlotSymbol[], pattern: readonly SlotSy
   return null;
 }
 
-function AlignReelAxesToTargetGrid(reelAxes: readonly ReelAxis[], targetGrid: readonly SlotSymbol[]): void {
-  for (let column = 0; column < REEL_AXIS_COUNT; column += 1) {
+function AlignReelAxesToTargetGrid(
+  reelAxes: readonly ReelAxis[],
+  targetGrid: readonly SlotSymbol[],
+  rowCount: number,
+  columnCount: number,
+): void {
+  for (let column = 0; column < columnCount; column += 1) {
     const axis = reelAxes[column];
-    const expected: SlotSymbol[] = [
-      targetGrid[column],
-      targetGrid[column + REEL_AXIS_COUNT],
-      targetGrid[column + REEL_AXIS_COUNT * 2],
-    ];
+    const expected: SlotSymbol[] = [];
+    for (let row = 0; row < rowCount; row += 1) {
+      expected.push(targetGrid[row * columnCount + column]);
+    }
     const found = FindPatternStart(axis.strip, expected);
     if (found !== null) {
       axis.position = found;
@@ -291,6 +332,7 @@ function AlignReelAxesToTargetGrid(reelAxes: readonly ReelAxis[], targetGrid: re
 
 async function RunStateRollingPhaseForReelAxes(
   reelAxes: readonly ReelAxis[],
+  rowCount: number,
   durationMs: number,
   getStepMs: (progress01: number) => number,
   shouldContinue: () => boolean,
@@ -313,7 +355,7 @@ async function RunStateRollingPhaseForReelAxes(
       return;
     }
     StepReelAxesDown(reelAxes);
-    onStep(GetGridFromReelAxes(reelAxes));
+    onStep(GetGridFromReelAxes(reelAxes, rowCount));
     onStepVisual?.();
   }
 }
@@ -728,20 +770,21 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   boardPanel.BorderColor = "#475377";
   boardPanel.BorderWidth = 1;
   boardPanel.BorderRadius = 12;
-  SetRect(boardNode, 0, 0, 400, 330);
+  SetRect(boardNode, 0, 0, 520, 330);
 
   const cellTexts: Text[] = [];
   const cellPanels: Panel[] = [];
-  for (let row = 0; row < 3; row += 1) {
+  for (let row = 0; row < MACHINE_ROWS; row += 1) {
     const rowNode = CreateChild(boardNode, `Row-${row}`);
     const rowPanel = rowNode.AddComponent(Panel);
     rowPanel.LayoutMode = "flow";
     rowPanel.Direction = "row";
     rowPanel.Gap = 10;
     rowPanel.AlignItems = "center";
+    rowPanel.JustifyContent = "center";
 
-    for (let column = 0; column < 3; column += 1) {
-      const index = row * 3 + column;
+    for (let column = 0; column < MACHINE_MAX_COLUMNS; column += 1) {
+      const index = row * MACHINE_MAX_COLUMNS + column;
       const cellNode = CreateChild(rowNode, `Cell-${index}`);
       const cellPanel = cellNode.AddComponent(Panel);
       cellPanel.LayoutMode = "flow";
@@ -850,9 +893,9 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   ruleTitle.FontWeight = "700";
   ruleTitle.TextAlign = "center";
 
-  const ruleBody = CreateLabel(ruleCardNode, "RuleBody", RULE_TEXT, 14);
-  ruleBody.Color = "#cad6ff";
-  ruleBody.TextAlign = "left";
+  const ruleBodyText = CreateLabel(ruleCardNode, "RuleBody", BuildRuleText(GRID_CONFIG_3X3), 14);
+  ruleBodyText.Color = "#cad6ff";
+  ruleBodyText.TextAlign = "left";
 
   const closeRuleNode = CreateChild(ruleCardNode, "CloseRuleButton");
   const closeRuleButton = closeRuleNode.AddComponent(Button);
@@ -992,6 +1035,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
     hierarchyToggleButton,
     inspectorToggleButton,
     closeRuleButton,
+    ruleBodyText,
     ruleOverlayPanel: overlayPanel,
     ruleDismissButton,
     ruleOverlay,
@@ -1042,8 +1086,10 @@ let selectedMachine: MachineEntry | null = null;
 let balance = 1000;
 let currentBet = 10;
 let totalRewards = 0;
-let machine3ReelAxes: ReelAxis[] = CreateMachine3ReelAxes();
-let currentGrid: SlotSymbol[] = GetGridFromReelAxes(machine3ReelAxes);
+let activeGridConfig: MachineGridConfig = GRID_CONFIG_3X3;
+let machine3ReelAxes: ReelAxis[] = CreateReelAxes(MACHINE3_REEL_COUNT);
+let machine4ReelAxes: ReelAxis[] = CreateReelAxes(MACHINE4_REEL_COUNT);
+let currentGrid: SlotSymbol[] = GetGridFromReelAxes(machine3ReelAxes, MACHINE_ROWS);
 let spinInProgress = false;
 let spinCancellationToken = 0;
 let winLineLoopToken = 0;
@@ -1076,6 +1122,61 @@ const UpdateMachineHud = (): void => {
   machineView.totalRewardText.Value = `Total Reward: ${totalRewards}`;
 };
 
+const GetBoardCellIndex = (row: number, column: number): number => {
+  return row * MACHINE_MAX_COLUMNS + column;
+};
+
+const GetCompactCellIndex = (row: number, column: number, columnCount: number): number => {
+  return row * columnCount + column;
+};
+
+const CompactCellIndexToBoardIndex = (compactIndex: number, columnCount: number): number => {
+  const row = Math.floor(compactIndex / columnCount);
+  const column = compactIndex % columnCount;
+  return GetBoardCellIndex(row, column);
+};
+
+const GetBoardColumnCellIndices = (columnCount: number): number[][] => {
+  const columnCellIndices: number[][] = [];
+  for (let column = 0; column < columnCount; column += 1) {
+    const columnIndices: number[] = [];
+    for (let row = 0; row < MACHINE_ROWS; row += 1) {
+      columnIndices.push(GetBoardCellIndex(row, column));
+    }
+    columnCellIndices.push(columnIndices);
+  }
+  return columnCellIndices;
+};
+
+const GetMachineGridConfig = (machineId: number): MachineGridConfig => {
+  return machineId === 4 ? GRID_CONFIG_3X4 : GRID_CONFIG_3X3;
+};
+
+const ApplyMachineGridConfig = (gridConfig: MachineGridConfig): void => {
+  activeGridConfig = gridConfig;
+  const boardRectTransform = machineView.board.GetComponent(RectTransform);
+  if (boardRectTransform !== null) {
+    const boardWidth = gridConfig.columns === MACHINE4_REEL_COUNT ? 520 : 400;
+    boardRectTransform.sizeDelta = new Vector2(boardWidth, 330);
+  }
+
+  for (let row = 0; row < MACHINE_ROWS; row += 1) {
+    for (let column = 0; column < MACHINE_MAX_COLUMNS; column += 1) {
+      const boardCellIndex = GetBoardCellIndex(row, column);
+      const visible = row < gridConfig.rows && column < gridConfig.columns;
+      const cellPanel = machineView.cellPanels[boardCellIndex];
+      cellPanel.Visible = visible;
+      cellPanel.Interactable = visible;
+      if (!visible) {
+        machineView.cellTexts[boardCellIndex].Value = "-";
+      }
+    }
+  }
+
+  machineView.ruleBodyText.Value = BuildRuleText(gridConfig);
+  Debug.Log(`[Machine] Apply grid layout ${gridConfig.rows}x${gridConfig.columns}.`);
+};
+
 const ResetCellHighlight = (): void => {
   for (const cellPanel of machineView.cellPanels) {
     cellPanel.BorderColor = "#4a5e91";
@@ -1084,15 +1185,31 @@ const ResetCellHighlight = (): void => {
 };
 
 const RenderGrid = (grid: readonly SlotSymbol[]): void => {
-  for (let index = 0; index < machineView.cellTexts.length; index += 1) {
-    machineView.cellTexts[index].Value = grid[index];
+  const expectedCells = activeGridConfig.rows * activeGridConfig.columns;
+  if (grid.length !== expectedCells) {
+    Debug.LogWarning(`[Grid] Render mismatch. expected=${expectedCells}, actual=${grid.length}`);
+  }
+  for (let row = 0; row < activeGridConfig.rows; row += 1) {
+    for (let column = 0; column < activeGridConfig.columns; column += 1) {
+      const compactIndex = GetCompactCellIndex(row, column, activeGridConfig.columns);
+      const boardCellIndex = GetBoardCellIndex(row, column);
+      machineView.cellTexts[boardCellIndex].Value = grid[compactIndex] ?? "-";
+    }
   }
 };
 
 const HighlightWinningLines = (lineIndices: readonly number[]): void => {
   for (const lineIndex of lineIndices) {
-    for (const cellIndex of PAYLINES[lineIndex]) {
-      const cellPanel = machineView.cellPanels[cellIndex];
+    const payline = activeGridConfig.paylines[lineIndex];
+    if (payline === undefined) {
+      continue;
+    }
+    for (const compactCellIndex of payline) {
+      const boardCellIndex = CompactCellIndexToBoardIndex(compactCellIndex, activeGridConfig.columns);
+      const cellPanel = machineView.cellPanels[boardCellIndex];
+      if (cellPanel === undefined) {
+        continue;
+      }
       cellPanel.BorderColor = "#ffd76a";
       cellPanel.BorderWidth = 2;
     }
@@ -1110,18 +1227,17 @@ const SetSpinState = (state: SpinState): void => {
 };
 
 const ResetReelVisualTransforms = (): void => {
-  for (const indices of REEL_COLUMN_CELL_INDICES) {
-    for (const index of indices) {
-      const element = machineView.cellPanels[index].Element;
-      element.style.transform = "translateY(0px)";
-      element.style.transition = "none";
-    }
+  for (const cellPanel of machineView.cellPanels) {
+    const element = cellPanel.Element;
+    element.style.transform = "translateY(0px)";
+    element.style.transition = "none";
   }
 };
 
 const TriggerMachine3ReelMoveVisual = (): void => {
-  for (let column = 0; column < REEL_COLUMN_CELL_INDICES.length; column += 1) {
-    const indices = REEL_COLUMN_CELL_INDICES[column];
+  const machine3ColumnCellIndices = GetBoardColumnCellIndices(MACHINE3_REEL_COUNT);
+  for (let column = 0; column < machine3ColumnCellIndices.length; column += 1) {
+    const indices = machine3ColumnCellIndices[column];
     const delayMs = column * 14;
     setTimeout(() => {
       for (const index of indices) {
@@ -1352,8 +1468,9 @@ const StartWinLineLoop = (lineWins: readonly LineWin[]): void => {
 
         ResetCellHighlight();
         HighlightWinningLines([lineWin.lineIndex]);
+        const paylineName = activeGridConfig.paylineNames[lineWin.lineIndex] ?? `Line ${lineWin.lineIndex + 1}`;
         SetRewardMessage(
-          `Line ${PAYLINE_NAMES[lineWin.lineIndex]} WIN +${lineWin.amount} (${lineWin.symbol})`,
+          `Line ${paylineName} WIN +${lineWin.amount} (${lineWin.symbol})`,
           "#ffd76a",
         );
         await Sleep(680);
@@ -1374,6 +1491,7 @@ const PlayMachine3SpinByStateMachine = async (
   SetSpinState("accelerate");
   await RunStateRollingPhaseForReelAxes(
     machine3ReelAxes,
+    MACHINE_ROWS,
     520,
     (progress) => 180 - 120 * progress,
     shouldContinue,
@@ -1391,6 +1509,7 @@ const PlayMachine3SpinByStateMachine = async (
   SetSpinState("constant");
   await RunStateRollingPhaseForReelAxes(
     machine3ReelAxes,
+    MACHINE_ROWS,
     760,
     () => 55,
     shouldContinue,
@@ -1408,6 +1527,7 @@ const PlayMachine3SpinByStateMachine = async (
   SetSpinState("decelerate");
   await RunStateRollingPhaseForReelAxes(
     machine3ReelAxes,
+    MACHINE_ROWS,
     640,
     (progress) => 60 + 160 * progress,
     shouldContinue,
@@ -1428,9 +1548,9 @@ const PlayMachine3SpinByStateMachine = async (
     return;
   }
 
-  AlignReelAxesToTargetGrid(machine3ReelAxes, finalGrid);
+  AlignReelAxesToTargetGrid(machine3ReelAxes, finalGrid, MACHINE_ROWS, MACHINE3_REEL_COUNT);
   SetSpinState("stop");
-  currentGrid = GetGridFromReelAxes(machine3ReelAxes);
+  currentGrid = GetGridFromReelAxes(machine3ReelAxes, MACHINE_ROWS);
   RenderGrid(currentGrid);
   ResetReelVisualTransforms();
 };
@@ -1438,8 +1558,14 @@ const PlayMachine3SpinByStateMachine = async (
 const OpenMachinePage = (machine: MachineEntry): void => {
   StopWinLineLoop();
   selectedMachine = machine;
+  const gridConfig = GetMachineGridConfig(machine.id);
+  ApplyMachineGridConfig(gridConfig);
   if (machine.id === 3) {
-    currentGrid = GetGridFromReelAxes(machine3ReelAxes);
+    currentGrid = GetGridFromReelAxes(machine3ReelAxes, gridConfig.rows);
+  } else if (machine.id === 4) {
+    currentGrid = GetGridFromReelAxes(machine4ReelAxes, gridConfig.rows);
+  } else {
+    currentGrid = SpinSymbols(gridConfig.rows * gridConfig.columns);
   }
   machineView.machineTitleText.Value = `Machine ${machine.id.toString().padStart(2, "0")}`;
   machineView.machineStatusText.Value = `Status: ${machine.status}`;
@@ -1456,7 +1582,9 @@ const OpenMachinePage = (machine: MachineEntry): void => {
   ResetCellHighlight();
   RenderGrid(currentGrid);
   SetRewardMessage("Press SPIN to play.");
-  Debug.Log(`Enter machine ${machine.id.toString().padStart(2, "0")} with status ${machine.status}.`);
+  Debug.Log(
+    `Enter machine ${machine.id.toString().padStart(2, "0")} with status ${machine.status}, layout ${gridConfig.rows}x${gridConfig.columns}.`,
+  );
 };
 
 lobbyView = BuildLobbyPage(uiRoot, canvas, machines, (machine) => {
@@ -1551,12 +1679,17 @@ const RunSpin = async (): Promise<void> => {
   balance -= currentBet;
   UpdateMachineHud();
 
-  const targetGrid = SpinSymbols();
+  const targetGrid = SpinSymbols(activeGridConfig.rows * activeGridConfig.columns);
   const ShouldContinue = (): boolean =>
     localSpinToken === spinCancellationToken && selectedMachine === machine && machineView.root.activeSelf;
   try {
     if (machine.id === 3) {
       await PlayMachine3SpinByStateMachine(targetGrid, ShouldContinue);
+    } else if (machine.id === 4) {
+      AlignReelAxesToTargetGrid(machine4ReelAxes, targetGrid, activeGridConfig.rows, activeGridConfig.columns);
+      currentGrid = GetGridFromReelAxes(machine4ReelAxes, activeGridConfig.rows);
+      RenderGrid(currentGrid);
+      SetSpinState("stop");
     } else {
       currentGrid = targetGrid;
       RenderGrid(currentGrid);
@@ -1568,7 +1701,7 @@ const RunSpin = async (): Promise<void> => {
       return;
     }
 
-    const result = EvaluatePaylines(currentGrid, currentBet);
+    const result = EvaluatePaylines(currentGrid, currentBet, activeGridConfig);
     balance += result.totalWin;
     totalRewards += result.totalWin;
     ResetCellHighlight();
@@ -1584,7 +1717,10 @@ const RunSpin = async (): Promise<void> => {
       const lineText = result.lineWins
         .slice()
         .sort((left, right) => left.amount - right.amount)
-        .map((lineWin) => `${PAYLINE_NAMES[lineWin.lineIndex]}(+${lineWin.amount})`)
+        .map((lineWin) => {
+          const paylineName = activeGridConfig.paylineNames[lineWin.lineIndex] ?? `Line ${lineWin.lineIndex + 1}`;
+          return `${paylineName}(+${lineWin.amount})`;
+        })
         .join(", ");
       SetRewardMessage(`WIN +${result.totalWin}. ${lineText}`, "#95d79f");
     } else {
@@ -1687,6 +1823,7 @@ MakePanelDraggable(machineView.inspectorDragHandleButton, machineView.inspectorP
 
 ApplyLoginMode();
 UpdateMachineHud();
+ApplyMachineGridConfig(GRID_CONFIG_3X3);
 RenderGrid(currentGrid);
 SetSpinState("stop");
 SetRuleOverlayVisible(false);
