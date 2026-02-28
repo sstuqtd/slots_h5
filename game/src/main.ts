@@ -60,6 +60,8 @@ type MachineViewRefs = {
   cellPanels: Panel[];
 };
 
+type IconRollDirection = "up" | "down";
+
 const SLOT_SYMBOLS: readonly SlotSymbol[] = ["A", "K", "Q", "J", "7", "BAR", "STAR"];
 
 const PAYOUT_MULTIPLIER: Record<SlotSymbol, number> = {
@@ -96,6 +98,8 @@ const RULE_TEXT = [
   "5) Reward = bet x symbol multiplier.",
   "6) Multipliers: A2 K3 Q4 J5 7x8 BAR10 STAR12.",
 ].join("\n");
+
+let machine2RollStyleInjected = false;
 
 function CreateChild(parent: GameObject, name: string): GameObject {
   const child = new GameObject(name);
@@ -151,6 +155,36 @@ function EvaluatePaylines(symbols: SlotSymbol[], bet: number): { totalWin: numbe
     }
   }
   return { totalWin, winningLines };
+}
+
+function EnsureMachine2RollStyles(documentRef: Document): void {
+  if (machine2RollStyleInjected) {
+    return;
+  }
+
+  const style = documentRef.createElement("style");
+  style.textContent = `
+    @keyframes machine2IconRollUp {
+      from { background-position: center 0px; }
+      to { background-position: center -120px; }
+    }
+    @keyframes machine2IconRollDown {
+      from { background-position: center 0px; }
+      to { background-position: center 120px; }
+    }
+  `;
+  documentRef.head.appendChild(style);
+  machine2RollStyleInjected = true;
+}
+
+function SetMachineIconRoll(icon: Image, direction: IconRollDirection): void {
+  const element = icon.Element;
+  element.style.backgroundSize = "100% 36px";
+  element.style.backgroundRepeat = "repeat-y";
+  element.style.animation =
+    direction === "up"
+      ? "machine2IconRollUp 0.55s linear infinite"
+      : "machine2IconRollDown 0.55s linear infinite";
 }
 
 function BuildLoginPage(root: GameObject, canvas: HTMLCanvasElement): LoginViewRefs {
@@ -277,6 +311,8 @@ function BuildLobbyPage(
   machineEntries: readonly MachineEntry[],
   onEnterMachine: (machine: MachineEntry) => void,
 ): LobbyViewRefs {
+  EnsureMachine2RollStyles(canvas.ownerDocument);
+
   const pageRoot = CreateChild(root, "LobbyPage");
   const pagePanel = pageRoot.AddComponent(Panel);
   pagePanel.LayoutMode = "absolute";
@@ -328,6 +364,45 @@ function BuildLobbyPage(
     icon.BorderWidth = 1;
     icon.BorderRadius = 10;
     SetRect(iconNode, 0, 0, 132, 92);
+
+    if (machine.id === 2) {
+      icon.BackgroundColor =
+        "repeating-linear-gradient(180deg, #86a0ff 0px, #86a0ff 14px, #4e6be1 14px, #4e6be1 28px)";
+
+      const rollControlNode = CreateChild(machineNode, "RollControlRow");
+      const rollControlPanel = rollControlNode.AddComponent(Panel);
+      rollControlPanel.LayoutMode = "flow";
+      rollControlPanel.Direction = "row";
+      rollControlPanel.Gap = 6;
+      rollControlPanel.AlignItems = "center";
+      SetRect(rollControlNode, 0, 0, 154, 34);
+
+      const rollButtonNode = CreateChild(rollControlNode, "RollButton");
+      const rollButton = rollButtonNode.AddComponent(Button);
+      rollButton.LayoutMode = "flow";
+      rollButton.Label = "Roll";
+      rollButton.FontSize = 12;
+      rollButton.Padding = "6px 10px";
+      rollButton.BackgroundColor = "#4a64d3";
+      rollButton.BorderColor = "#89a2ff";
+      rollButton.BorderRadius = 8;
+      rollButton.OnClick.AddListener(() => {
+        SetMachineIconRoll(icon, "up");
+      });
+
+      const downRollButtonNode = CreateChild(rollControlNode, "DownRollButton");
+      const downRollButton = downRollButtonNode.AddComponent(Button);
+      downRollButton.LayoutMode = "flow";
+      downRollButton.Label = "Down Roll";
+      downRollButton.FontSize = 12;
+      downRollButton.Padding = "6px 10px";
+      downRollButton.BackgroundColor = "#4a64d3";
+      downRollButton.BorderColor = "#89a2ff";
+      downRollButton.BorderRadius = 8;
+      downRollButton.OnClick.AddListener(() => {
+        SetMachineIconRoll(icon, "down");
+      });
+    }
 
     const machineTitle = CreateLabel(
       machineNode,
