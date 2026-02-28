@@ -43,6 +43,10 @@ type MachineEntry = {
 
 type MachineViewRefs = {
   root: GameObject;
+  topRow: GameObject;
+  walletRow: GameObject;
+  board: GameObject;
+  actionRow: GameObject;
   machineTitleText: Text;
   machineStatusText: Text;
   stateText: Text;
@@ -55,8 +59,16 @@ type MachineViewRefs = {
   subBetButton: Button;
   showRuleButton: Button;
   backButton: Button;
+  editModeButton: Button;
   closeRuleButton: Button;
+  ruleOverlayPanel: Panel;
+  ruleDismissButton: Button;
   ruleOverlay: GameObject;
+  editorRoot: GameObject;
+  editorRootPanel: Panel;
+  hierarchyButtons: Record<string, Button>;
+  inspectorTitleText: Text;
+  inspectorBodyText: Text;
   cellTexts: Text[];
   cellPanels: Panel[];
   boardPanel: Panel;
@@ -611,6 +623,15 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   backButton.BorderColor = "#5e73b0";
   backButton.BorderRadius = 8;
 
+  const editModeButtonNode = CreateChild(topRowNode, "EditModeButton");
+  const editModeButton = editModeButtonNode.AddComponent(Button);
+  editModeButton.LayoutMode = "flow";
+  editModeButton.Label = "Edit Mode";
+  editModeButton.Padding = "10px 14px";
+  editModeButton.BackgroundColor = "#444f7f";
+  editModeButton.BorderColor = "#7385c6";
+  editModeButton.BorderRadius = 8;
+
   const titleGroupNode = CreateChild(topRowNode, "TitleGroup");
   const titleGroupPanel = titleGroupNode.AddComponent(Panel);
   titleGroupPanel.LayoutMode = "flow";
@@ -756,7 +777,20 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   overlayPanel.AlignItems = "center";
   overlayPanel.JustifyContent = "center";
   overlayPanel.BackgroundColor = "rgba(4, 6, 12, 0.8)";
+  overlayPanel.Visible = false;
+  overlayPanel.Interactable = false;
   SetRect(ruleOverlay, 0, 0, canvas.width, canvas.height, 0, 0);
+
+  const ruleDismissNode = CreateChild(ruleOverlay, "RuleDismissButton");
+  const ruleDismissButton = ruleDismissNode.AddComponent(Button);
+  ruleDismissButton.LayoutMode = "absolute";
+  ruleDismissButton.Label = "";
+  ruleDismissButton.Padding = "0";
+  ruleDismissButton.BackgroundColor = "rgba(0,0,0,0)";
+  ruleDismissButton.BorderColor = "rgba(0,0,0,0)";
+  ruleDismissButton.BorderWidth = 0;
+  ruleDismissButton.BorderRadius = 0;
+  SetRect(ruleDismissNode, 0, 0, canvas.width, canvas.height, 0, 0);
 
   const ruleCardNode = CreateChild(ruleOverlay, "RuleCard");
   const ruleCardPanel = ruleCardNode.AddComponent(Panel);
@@ -787,10 +821,88 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   closeRuleButton.BorderColor = "#7a8fd5";
   closeRuleButton.BorderRadius = 8;
 
-  ruleOverlay.SetActive(false);
+  const editorRoot = CreateChild(pageRoot, "EditorModeRoot");
+  const editorRootPanel = editorRoot.AddComponent(Panel);
+  editorRootPanel.LayoutMode = "absolute";
+  editorRootPanel.Direction = "column";
+  editorRootPanel.BackgroundColor = "transparent";
+  editorRootPanel.Visible = false;
+  SetRect(editorRoot, 0, 0, canvas.width, canvas.height, 0, 0);
+
+  const hierarchyPanelNode = CreateChild(editorRoot, "HierarchyPanel");
+  const hierarchyPanel = hierarchyPanelNode.AddComponent(Panel);
+  hierarchyPanel.LayoutMode = "absolute";
+  hierarchyPanel.Direction = "column";
+  hierarchyPanel.Gap = 8;
+  hierarchyPanel.Padding = 12;
+  hierarchyPanel.BackgroundColor = "rgba(15, 20, 38, 0.95)";
+  hierarchyPanel.BorderColor = "#5f73ab";
+  hierarchyPanel.BorderWidth = 1;
+  hierarchyPanel.BorderRadius = 10;
+  SetRect(hierarchyPanelNode, 14, 14, 250, 430, 0, 0);
+
+  const hierarchyTitle = CreateLabel(hierarchyPanelNode, "HierarchyTitle", "Hierarchy", 20);
+  hierarchyTitle.FontWeight = "700";
+
+  const hierarchyListNode = CreateChild(hierarchyPanelNode, "HierarchyList");
+  const hierarchyList = hierarchyListNode.AddComponent(Panel);
+  hierarchyList.LayoutMode = "flow";
+  hierarchyList.Direction = "column";
+  hierarchyList.Gap = 6;
+  hierarchyList.OverflowY = "auto";
+  SetRect(hierarchyListNode, 0, 0, 220, 340);
+
+  const inspectorPanelNode = CreateChild(editorRoot, "InspectorPanel");
+  const inspectorPanel = inspectorPanelNode.AddComponent(Panel);
+  inspectorPanel.LayoutMode = "absolute";
+  inspectorPanel.Direction = "column";
+  inspectorPanel.Gap = 8;
+  inspectorPanel.Padding = 12;
+  inspectorPanel.BackgroundColor = "rgba(15, 20, 38, 0.95)";
+  inspectorPanel.BorderColor = "#5f73ab";
+  inspectorPanel.BorderWidth = 1;
+  inspectorPanel.BorderRadius = 10;
+  SetRect(inspectorPanelNode, canvas.width - 14, 14, 290, 430, 1, 0);
+
+  const inspectorTitle = CreateLabel(inspectorPanelNode, "InspectorTitle", "Inspector", 20);
+  inspectorTitle.FontWeight = "700";
+
+  const inspectorTargetTitle = CreateLabel(inspectorPanelNode, "InspectorTargetTitle", "Target: MachinePage", 16);
+  inspectorTargetTitle.FontWeight = "600";
+
+  const inspectorBodyText = CreateLabel(inspectorPanelNode, "InspectorBody", "No object selected.", 13);
+  inspectorBodyText.Color = "#c6d2f6";
+  inspectorBodyText.TextAlign = "left";
+
+  const hierarchyButtons: Record<string, Button> = {};
+  const hierarchyTargets: Array<{ key: string; display: string; target: GameObject }> = [
+    { key: "MachinePage", display: "MachinePage", target: pageRoot },
+    { key: "TopRow", display: "TopRow", target: topRowNode },
+    { key: "WalletRow", display: "WalletRow", target: walletRowNode },
+    { key: "SlotBoard", display: "SlotBoard", target: boardNode },
+    { key: "ActionRow", display: "ActionRow", target: actionRowNode },
+    { key: "RuleOverlay", display: "RuleOverlay", target: ruleOverlay },
+  ];
+
+  for (const item of hierarchyTargets) {
+    const buttonNode = CreateChild(hierarchyListNode, `${item.key}Button`);
+    const button = buttonNode.AddComponent(Button);
+    button.LayoutMode = "flow";
+    button.Label = item.display;
+    button.FontSize = 13;
+    button.Padding = "7px 10px";
+    button.BackgroundColor = "#38446d";
+    button.BorderColor = "#6678b5";
+    button.BorderRadius = 7;
+    hierarchyButtons[item.key] = button;
+  }
 
   return {
     root: pageRoot,
+    topRow: topRowNode,
+    walletRow: walletRowNode,
+    board: boardNode,
+    actionRow: actionRowNode,
     machineTitleText,
     machineStatusText,
     stateText,
@@ -803,8 +915,16 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
     subBetButton,
     showRuleButton,
     backButton,
+    editModeButton,
     closeRuleButton,
+    ruleOverlayPanel: overlayPanel,
+    ruleDismissButton,
     ruleOverlay,
+    editorRoot,
+    editorRootPanel,
+    hierarchyButtons,
+    inspectorTitleText: inspectorTargetTitle,
+    inspectorBodyText,
     cellTexts,
     cellPanels,
     boardPanel,
@@ -844,6 +964,8 @@ let currentGrid: SlotSymbol[] = GetGridFromReelAxes(machine3ReelAxes);
 let spinInProgress = false;
 let spinCancellationToken = 0;
 let winLineLoopToken = 0;
+let editorModeEnabled = false;
+let selectedHierarchyKey = "MachinePage";
 
 const ActivateTabButton = (button: Button, active: boolean): void => {
   button.BackgroundColor = active ? "#3f8cff" : "#2d3552";
@@ -904,6 +1026,72 @@ const SetMachineInteractable = (value: boolean): void => {
   machineView.addBetButton.Interactable = value;
   machineView.subBetButton.Interactable = value;
   machineView.showRuleButton.Interactable = value;
+};
+
+const SetRuleOverlayVisible = (visible: boolean): void => {
+  machineView.ruleOverlayPanel.Visible = visible;
+  machineView.ruleOverlayPanel.Interactable = visible;
+};
+
+const GetHierarchyTargetByKey = (key: string): GameObject => {
+  switch (key) {
+    case "TopRow":
+      return machineView.topRow;
+    case "WalletRow":
+      return machineView.walletRow;
+    case "SlotBoard":
+      return machineView.board;
+    case "ActionRow":
+      return machineView.actionRow;
+    case "RuleOverlay":
+      return machineView.ruleOverlay;
+    case "MachinePage":
+    default:
+      return machineView.root;
+  }
+};
+
+const UpdateInspectorForSelection = (): void => {
+  const target = GetHierarchyTargetByKey(selectedHierarchyKey);
+  const componentNames = target
+    ._GetAllComponents()
+    .map((component) => component.constructor.name)
+    .join(", ");
+  machineView.inspectorTitleText.Value = `Target: ${selectedHierarchyKey}`;
+  machineView.inspectorBodyText.Value = [
+    `Name: ${target.name}`,
+    `ActiveSelf: ${target.activeSelf}`,
+    `ActiveInHierarchy: ${target.activeInHierarchy}`,
+    `Components: ${componentNames || "None"}`,
+    `ChildCount: ${target.transform.childCount}`,
+    `Position: (${target.transform.position.x.toFixed(2)}, ${target.transform.position.y.toFixed(2)}, ${target.transform.position.z.toFixed(2)})`,
+  ].join("\n");
+};
+
+const RefreshHierarchyButtonStyles = (): void => {
+  for (const [key, button] of Object.entries(machineView.hierarchyButtons)) {
+    const active = key === selectedHierarchyKey;
+    button.BackgroundColor = active ? "#5b6fb0" : "#38446d";
+    button.BorderColor = active ? "#9db4ff" : "#6678b5";
+  }
+};
+
+const SelectHierarchyNode = (key: string): void => {
+  selectedHierarchyKey = key;
+  RefreshHierarchyButtonStyles();
+  UpdateInspectorForSelection();
+};
+
+const SetEditorModeEnabled = (enabled: boolean): void => {
+  editorModeEnabled = enabled;
+  machineView.editorRootPanel.Visible = enabled;
+  machineView.editorRootPanel.Interactable = enabled;
+  machineView.editModeButton.Label = enabled ? "Edit Mode: ON" : "Edit Mode";
+  machineView.editModeButton.BackgroundColor = enabled ? "#5b6fb0" : "#444f7f";
+  machineView.editModeButton.BorderColor = enabled ? "#9db4ff" : "#7385c6";
+  if (enabled) {
+    SelectHierarchyNode(selectedHierarchyKey);
+  }
 };
 
 const StopWinLineLoop = (): void => {
@@ -1009,7 +1197,9 @@ const OpenMachinePage = (machine: MachineEntry): void => {
   SetSpinState("stop");
   lobbyView.root.SetActive(false);
   machineView.root.SetActive(true);
-  machineView.ruleOverlay.SetActive(false);
+  SetRuleOverlayVisible(false);
+  SetEditorModeEnabled(false);
+  SelectHierarchyNode("MachinePage");
   UpdateMachineHud();
   ResetCellHighlight();
   RenderGrid(currentGrid);
@@ -1098,7 +1288,7 @@ const RunSpin = async (): Promise<void> => {
   spinInProgress = true;
   const localSpinToken = ++spinCancellationToken;
   StopWinLineLoop();
-  machineView.ruleOverlay.SetActive(false);
+  SetRuleOverlayVisible(false);
   SetMachineInteractable(false);
 
   balance -= currentBet;
@@ -1148,6 +1338,19 @@ const RunSpin = async (): Promise<void> => {
   }
 };
 
+const GoBackToLobby = (): void => {
+  spinCancellationToken += 1;
+  spinInProgress = false;
+  selectedMachine = null;
+  SetMachineInteractable(true);
+  StopWinLineLoop();
+  SetSpinState("stop");
+  SetRuleOverlayVisible(false);
+  SetEditorModeEnabled(false);
+  machineView.root.SetActive(false);
+  lobbyView.root.SetActive(true);
+};
+
 loginView.emailModeButton.OnClick.AddListener(() => {
   loginMode = "email";
   ApplyLoginMode();
@@ -1175,29 +1378,42 @@ machineView.spinButton.OnClick.AddListener(() => {
 });
 
 machineView.showRuleButton.OnClick.AddListener(() => {
-  machineView.ruleOverlay.SetActive(true);
+  SetRuleOverlayVisible(true);
 });
 
 machineView.closeRuleButton.OnClick.AddListener(() => {
-  machineView.ruleOverlay.SetActive(false);
+  SetRuleOverlayVisible(false);
 });
 
+machineView.ruleDismissButton.OnClick.AddListener(() => {
+  SetRuleOverlayVisible(false);
+});
+
+machineView.editModeButton.OnClick.AddListener(() => {
+  SetEditorModeEnabled(!editorModeEnabled);
+});
+
+const hierarchyOrder = ["MachinePage", "TopRow", "WalletRow", "SlotBoard", "ActionRow", "RuleOverlay"];
+for (const key of hierarchyOrder) {
+  const button = machineView.hierarchyButtons[key];
+  if (button !== undefined) {
+    button.OnClick.AddListener(() => {
+      SelectHierarchyNode(key);
+    });
+  }
+}
+
 machineView.backButton.OnClick.AddListener(() => {
-  spinCancellationToken += 1;
-  spinInProgress = false;
-  selectedMachine = null;
-  SetMachineInteractable(true);
-  StopWinLineLoop();
-  SetSpinState("stop");
-  machineView.ruleOverlay.SetActive(false);
-  machineView.root.SetActive(false);
-  lobbyView.root.SetActive(true);
+  GoBackToLobby();
 });
 
 ApplyLoginMode();
 UpdateMachineHud();
 RenderGrid(currentGrid);
 SetSpinState("stop");
+SetRuleOverlayVisible(false);
+SetEditorModeEnabled(false);
+SelectHierarchyNode("MachinePage");
 SetRewardMessage("Press SPIN to play.");
 
 engine.scene.AddGameObject(uiRoot);
