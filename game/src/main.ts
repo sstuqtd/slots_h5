@@ -329,7 +329,7 @@ function GetGridFromReelAxes(reelAxes: readonly ReelAxis[], rowCount: number): S
 
 function StepReelAxesDown(reelAxes: readonly ReelAxis[]): void {
   for (const axis of reelAxes) {
-    axis.position = (axis.position + 1) % axis.strip.length;
+    axis.position = (axis.position - 1 + axis.strip.length) % axis.strip.length;
   }
 }
 
@@ -339,7 +339,7 @@ function StepReelAxesDownByColumns(reelAxes: readonly ReelAxis[], columns: reado
     if (axis === undefined) {
       continue;
     }
-    axis.position = (axis.position + 1) % axis.strip.length;
+    axis.position = (axis.position - 1 + axis.strip.length) % axis.strip.length;
   }
 }
 
@@ -1439,15 +1439,16 @@ const TriggerMachine3ReelMoveVisual = (): void => {
     setTimeout(() => {
       for (const index of indices) {
         const element = machineView.cellPanels[index].Element;
-        element.style.transition = "transform 90ms linear";
-        element.style.transform = "translateY(12px)";
+        element.style.transition = "none";
+        element.style.transform = "translateY(-12px)";
       }
-      setTimeout(() => {
+      requestAnimationFrame(() => {
         for (const index of indices) {
           const element = machineView.cellPanels[index].Element;
+          element.style.transition = "transform 90ms linear";
           element.style.transform = "translateY(0px)";
         }
-      }, 0);
+      });
     }, delayMs);
   }
 };
@@ -1476,11 +1477,11 @@ const TriggerMachine4ReelMoveVisual = (activeColumns: readonly number[]): void =
     }
     for (const index of indices) {
       const element = machineView.cellPanels[index].Element;
-      element.style.transition = "transform 85ms linear";
-      element.style.transform = "translateY(12px)";
+      element.style.transition = "none";
+      element.style.transform = "translateY(-12px)";
     }
   }
-  setTimeout(() => {
+  requestAnimationFrame(() => {
     for (const column of activeColumns) {
       const indices = machine4ColumnCellIndices[column];
       if (indices === undefined) {
@@ -1488,10 +1489,11 @@ const TriggerMachine4ReelMoveVisual = (activeColumns: readonly number[]): void =
       }
       for (const index of indices) {
         const element = machineView.cellPanels[index].Element;
+        element.style.transition = "transform 85ms linear";
         element.style.transform = "translateY(0px)";
       }
     }
-  }, 0);
+  });
 };
 
 const PlayMachine4SpinByStartMode = async (
