@@ -70,6 +70,11 @@ type LineWin = {
   symbol: SlotSymbol;
 };
 
+type ReelAxis = {
+  strip: SlotSymbol[];
+  position: number;
+};
+
 type IconRollDirection = "up" | "down";
 
 const SLOT_SYMBOLS: readonly SlotSymbol[] = ["A", "K", "Q", "J", "7", "BAR", "STAR"];
@@ -93,6 +98,9 @@ const PAYLINES: readonly (readonly [number, number, number])[] = [
 ];
 
 const PAYLINE_NAMES = ["Top", "Middle", "Bottom", "Diagonal LR", "Diagonal RL"];
+const REEL_AXIS_COUNT = 3;
+const VISIBLE_ROWS = 3;
+const REEL_STRIP_LENGTH = 24;
 
 const SPIN_STATE_LABEL: Record<SpinState, string> = {
   accelerate: "State: Accelerate",
@@ -186,26 +194,80 @@ function Sleep(milliseconds: number): Promise<void> {
   });
 }
 
-function RollGridDownOneStep(grid: readonly SlotSymbol[]): SlotSymbol[] {
-  const next = [...grid];
-  for (let column = 0; column < 3; column += 1) {
-    const topIndex = column;
-    const middleIndex = 3 + column;
-    const bottomIndex = 6 + column;
-    next[bottomIndex] = grid[middleIndex];
-    next[middleIndex] = grid[topIndex];
-    next[topIndex] = RandomSymbol();
-  }
-  return next;
+function CreateRandomReelAxis(stripLength = REEL_STRIP_LENGTH): ReelAxis {
+  return {
+    strip: Array.from({ length: stripLength }, () => RandomSymbol()),
+    position: Math.floor(Math.random() * stripLength),
+  };
 }
 
-async function RunStateRollingPhase(
-  startGrid: readonly SlotSymbol[],
+function CreateMachine3ReelAxes(): ReelAxis[] {
+  return Array.from({ length: REEL_AXIS_COUNT }, () => CreateRandomReelAxis());
+}
+
+function GetGridFromReelAxes(reelAxes: readonly ReelAxis[]): SlotSymbol[] {
+  const grid: SlotSymbol[] = [];
+  for (let row = 0; row < VISIBLE_ROWS; row += 1) {
+    for (let column = 0; column < REEL_AXIS_COUNT; column += 1) {
+      const axis = reelAxes[column];
+      const stripLength = axis.strip.length;
+      const symbolIndex = (axis.position + row) % stripLength;
+      grid.push(axis.strip[symbolIndex]);
+    }
+  }
+  return grid;
+}
+
+function StepReelAxesDown(reelAxes: readonly ReelAxis[]): void {
+  for (const axis of reelAxes) {
+    axis.position = (axis.position + 1) % axis.strip.length;
+  }
+}
+
+function FindPatternStart(strip: readonly SlotSymbol[], pattern: readonly SlotSymbol[]): number | null {
+  for (let start = 0; start < strip.length; start += 1) {
+    let matched = true;
+    for (let index = 0; index < pattern.length; index += 1) {
+      const stripIndex = (start + index) % strip.length;
+      if (strip[stripIndex] !== pattern[index]) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) {
+      return start;
+    }
+  }
+  return null;
+}
+
+function AlignReelAxesToTargetGrid(reelAxes: readonly ReelAxis[], targetGrid: readonly SlotSymbol[]): void {
+  for (let column = 0; column < REEL_AXIS_COUNT; column += 1) {
+    const axis = reelAxes[column];
+    const expected: SlotSymbol[] = [
+      targetGrid[column],
+      targetGrid[column + REEL_AXIS_COUNT],
+      targetGrid[column + REEL_AXIS_COUNT * 2],
+    ];
+    const found = FindPatternStart(axis.strip, expected);
+    if (found !== null) {
+      axis.position = found;
+      continue;
+    }
+
+    for (let row = 0; row < expected.length; row += 1) {
+      const stripIndex = (axis.position + row) % axis.strip.length;
+      axis.strip[stripIndex] = expected[row];
+    }
+  }
+}
+
+async function RunStateRollingPhaseForReelAxes(
+  reelAxes: readonly ReelAxis[],
   durationMs: number,
   getStepMs: (progress01: number) => number,
   onStep: (grid: SlotSymbol[]) => void,
-): Promise<SlotSymbol[]> {
-  let grid = [...startGrid];
+): Promise<void> {
   const start = Date.now();
   while (true) {
     const elapsed = Date.now() - start;
@@ -215,10 +277,9 @@ async function RunStateRollingPhase(
     const progress = Math.min(elapsed / durationMs, 1);
     const stepMs = Math.max(18, Math.round(getStepMs(progress)));
     await Sleep(stepMs);
-    grid = RollGridDownOneStep(grid);
-    onStep(grid);
+    StepReelAxesDown(reelAxes);
+    onStep(GetGridFromReelAxes(reelAxes));
   }
-  return grid;
 }
 
 async function PlayMachine3CallbackEffect(machineView: MachineViewRefs): Promise<void> {
@@ -771,7 +832,8 @@ let selectedMachine: MachineEntry | null = null;
 let balance = 1000;
 let currentBet = 10;
 let totalRewards = 0;
-let currentGrid: SlotSymbol[] = Array.from({ length: 9 }, () => "A");
+let machine3ReelAxes: ReelAxis[] = CreateMachine3ReelAxes();
+let currentGrid: SlotSymbol[] = GetGridFromReelAxes(machine3ReelAxes);
 let spinInProgress = false;
 let winLineLoopToken = 0;
 
@@ -875,22 +937,20 @@ const StartWinLineLoop = (lineWins: readonly LineWin[]): void => {
 };
 
 const PlayMachine3SpinByStateMachine = async (finalGrid: readonly SlotSymbol[]): Promise<void> => {
-  let rollingGrid = [...currentGrid];
-
   SetSpinState("accelerate");
-  rollingGrid = await RunStateRollingPhase(rollingGrid, 520, (progress) => 180 - 120 * progress, (grid) => {
+  await RunStateRollingPhaseForReelAxes(machine3ReelAxes, 520, (progress) => 180 - 120 * progress, (grid) => {
     currentGrid = grid;
     RenderGrid(currentGrid);
   });
 
   SetSpinState("constant");
-  rollingGrid = await RunStateRollingPhase(rollingGrid, 760, () => 55, (grid) => {
+  await RunStateRollingPhaseForReelAxes(machine3ReelAxes, 760, () => 55, (grid) => {
     currentGrid = grid;
     RenderGrid(currentGrid);
   });
 
   SetSpinState("decelerate");
-  rollingGrid = await RunStateRollingPhase(rollingGrid, 640, (progress) => 60 + 160 * progress, (grid) => {
+  await RunStateRollingPhaseForReelAxes(machine3ReelAxes, 640, (progress) => 60 + 160 * progress, (grid) => {
     currentGrid = grid;
     RenderGrid(currentGrid);
   });
@@ -898,14 +958,18 @@ const PlayMachine3SpinByStateMachine = async (finalGrid: readonly SlotSymbol[]):
   SetSpinState("callback");
   await PlayMachine3CallbackEffect(machineView);
 
+  AlignReelAxesToTargetGrid(machine3ReelAxes, finalGrid);
   SetSpinState("stop");
-  currentGrid = [...finalGrid];
+  currentGrid = GetGridFromReelAxes(machine3ReelAxes);
   RenderGrid(currentGrid);
 };
 
 const OpenMachinePage = (machine: MachineEntry): void => {
   StopWinLineLoop();
   selectedMachine = machine;
+  if (machine.id === 3) {
+    currentGrid = GetGridFromReelAxes(machine3ReelAxes);
+  }
   machineView.machineTitleText.Value = `Machine ${machine.id.toString().padStart(2, "0")}`;
   machineView.machineStatusText.Value = `Status: ${machine.status}`;
   SetSpinState("stop");
