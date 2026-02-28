@@ -167,6 +167,9 @@ const MACHINE4_MODE_LABEL: Record<Machine4Mode, string> = {
   normal: "Normal",
   freeSpin: "FreeSpin",
 };
+const MACHINE4_FREE_SPIN_TRIGGER_CHANCE = 0.1;
+const MACHINE4_FREE_SPIN_MIN_COUNT = 3;
+const MACHINE4_FREE_SPIN_MAX_COUNT = 8;
 
 const BuildRuleText = (gridConfig: MachineGridConfig): string => {
   const lines = [
@@ -189,19 +192,26 @@ const BuildMachineRuleText = (
   machineId: number,
   gridConfig: MachineGridConfig,
   machine4Mode: Machine4Mode,
+  machine4FreeSpinsRemaining: number,
 ): string => {
   const baseRule = BuildRuleText(gridConfig);
   if (machineId !== 4) {
     return baseRule;
   }
 
+  const modeLine =
+    machine4Mode === "freeSpin"
+      ? `Current Mode: ${MACHINE4_MODE_LABEL[machine4Mode]} (Left ${machine4FreeSpinsRemaining})`
+      : `Current Mode: ${MACHINE4_MODE_LABEL[machine4Mode]}`;
+
   return [
     baseRule,
     "",
     "Machine 4 Modes:",
-    `Current Mode: ${MACHINE4_MODE_LABEL[machine4Mode]}`,
+    modeLine,
     "- Normal: Spin consumes current bet.",
-    "- FreeSpin: Spin does not consume bet.",
+    "- Normal has 10% chance to trigger 3~8 FreeSpins.",
+    "- FreeSpin: Spin does not consume bet and consumes 1 FreeSpin each spin.",
   ].join("\n");
 };
 
@@ -1159,6 +1169,7 @@ let lobbyView: LobbyViewRefs;
 let loginMode: LoginMode = "email";
 let selectedMachine: MachineEntry | null = null;
 let machine4Mode: Machine4Mode = "normal";
+let machine4FreeSpinsRemaining = 0;
 let balance = 1000;
 let currentBet = 10;
 let totalRewards = 0;
@@ -1234,9 +1245,18 @@ const SetModeButtonActiveStyle = (button: Button, active: boolean): void => {
   button.TextColor = "#ffffff";
 };
 
+const RollMachine4FreeSpinCount = (): number => {
+  return Math.floor(Math.random() * (MACHINE4_FREE_SPIN_MAX_COUNT - MACHINE4_FREE_SPIN_MIN_COUNT + 1)) + MACHINE4_FREE_SPIN_MIN_COUNT;
+};
+
 const UpdateRuleTextForCurrentMachine = (): void => {
   const machineId = selectedMachine?.id ?? 0;
-  machineView.ruleBodyText.Value = BuildMachineRuleText(machineId, activeGridConfig, machine4Mode);
+  machineView.ruleBodyText.Value = BuildMachineRuleText(
+    machineId,
+    activeGridConfig,
+    machine4Mode,
+    machine4FreeSpinsRemaining,
+  );
 };
 
 const RefreshMachineHeader = (): void => {
@@ -1248,8 +1268,12 @@ const RefreshMachineHeader = (): void => {
   }
 
   if (machine.id === 4) {
-    machineView.machineStatusText.Value = `Status: ${machine.status} | Mode: ${MACHINE4_MODE_LABEL[machine4Mode]}`;
-    machineView.modeText.Value = `Mode: ${MACHINE4_MODE_LABEL[machine4Mode]}`;
+    const modeSuffix =
+      machine4Mode === "freeSpin"
+        ? `${MACHINE4_MODE_LABEL[machine4Mode]} (${machine4FreeSpinsRemaining})`
+        : MACHINE4_MODE_LABEL[machine4Mode];
+    machineView.machineStatusText.Value = `Status: ${machine.status} | Mode: ${modeSuffix}`;
+    machineView.modeText.Value = `Mode: ${modeSuffix}`;
     return;
   }
 
@@ -1258,18 +1282,27 @@ const RefreshMachineHeader = (): void => {
 };
 
 const SetMachine4Mode = (mode: Machine4Mode): void => {
-  machine4Mode = mode;
-  SetModeButtonActiveStyle(machineView.normalModeButton, mode === "normal");
-  SetModeButtonActiveStyle(machineView.freeSpinModeButton, mode === "freeSpin");
+  if (mode === "freeSpin" && machine4FreeSpinsRemaining <= 0) {
+    machine4Mode = "normal";
+  } else {
+    machine4Mode = mode;
+  }
+
+  machineView.freeSpinModeButton.Label =
+    machine4FreeSpinsRemaining > 0 ? `FreeSpin x${machine4FreeSpinsRemaining}` : "FreeSpin";
+  SetModeButtonActiveStyle(machineView.normalModeButton, machine4Mode === "normal");
+  SetModeButtonActiveStyle(machineView.freeSpinModeButton, machine4Mode === "freeSpin");
   RefreshMachineHeader();
   UpdateRuleTextForCurrentMachine();
-  Debug.Log(`[Machine4] Mode -> ${MACHINE4_MODE_LABEL[mode]}`);
+  Debug.Log(
+    `[Machine4] Mode -> ${MACHINE4_MODE_LABEL[machine4Mode]} (freeSpins=${machine4FreeSpinsRemaining})`,
+  );
 };
 
 const SetMachine4ModeVisible = (visible: boolean): void => {
   machineView.machine4ModeRow.SetActive(visible);
   machineView.normalModeButton.Interactable = visible;
-  machineView.freeSpinModeButton.Interactable = visible;
+  machineView.freeSpinModeButton.Interactable = false;
 };
 
 const ApplyMachineGridConfig = (gridConfig: MachineGridConfig): void => {
@@ -1381,8 +1414,8 @@ const SetMachineInteractable = (value: boolean): void => {
   machineView.subBetButton.Interactable = value;
   machineView.showRuleButton.Interactable = value;
   const machine4ModeInteractable = value && selectedMachine?.id === 4;
-  machineView.normalModeButton.Interactable = machine4ModeInteractable;
-  machineView.freeSpinModeButton.Interactable = machine4ModeInteractable;
+  machineView.normalModeButton.Interactable = machine4ModeInteractable && machine4FreeSpinsRemaining <= 0;
+  machineView.freeSpinModeButton.Interactable = false;
 };
 
 const SetRuleOverlayVisible = (visible: boolean): void => {
@@ -1685,7 +1718,11 @@ const OpenMachinePage = (machine: MachineEntry): void => {
   ApplyMachineGridConfig(gridConfig);
   if (machine.id === 4) {
     SetMachine4ModeVisible(true);
-    SetMachine4Mode("normal");
+    if (machine4FreeSpinsRemaining > 0) {
+      SetMachine4Mode("freeSpin");
+    } else {
+      SetMachine4Mode("normal");
+    }
   } else {
     SetMachine4ModeVisible(false);
     RefreshMachineHeader();
@@ -1708,6 +1745,7 @@ const OpenMachinePage = (machine: MachineEntry): void => {
   SelectHierarchyNode(selectedHierarchyKey);
   ResetReelVisualTransforms();
   UpdateMachineHud();
+  SetMachineInteractable(true);
   ResetCellHighlight();
   RenderGrid(currentGrid);
   SetRewardMessage("Press SPIN to play.");
@@ -1791,6 +1829,7 @@ const RunSpin = async (): Promise<void> => {
     return;
   }
 
+  const isMachine4Normal = machine.id === 4 && machine4Mode === "normal";
   const isMachine4FreeSpin = machine.id === 4 && machine4Mode === "freeSpin";
   if (!isMachine4FreeSpin && balance < currentBet) {
     Debug.Log("[Spin] Reject: insufficient balance.");
@@ -1843,6 +1882,8 @@ const RunSpin = async (): Promise<void> => {
     ResetCellHighlight();
     UpdateMachineHud();
 
+    let rewardMessage = "";
+    let rewardColor = "#95a6df";
     if (result.totalWin > 0) {
       if (machine.id === 3) {
         StartWinLineLoop(result.lineWins);
@@ -1859,11 +1900,42 @@ const RunSpin = async (): Promise<void> => {
         })
         .join(", ");
       const modeSuffix = machine.id === 4 ? ` [${MACHINE4_MODE_LABEL[machine4Mode]}]` : "";
-      SetRewardMessage(`WIN +${result.totalWin}. ${lineText}${modeSuffix}`, "#95d79f");
+      rewardMessage = `WIN +${result.totalWin}. ${lineText}${modeSuffix}`;
+      rewardColor = "#95d79f";
     } else {
       const freeSpinSuffix = isMachine4FreeSpin ? " (FreeSpin)" : "";
-      SetRewardMessage(`No reward this spin.${freeSpinSuffix}`, "#95a6df");
+      rewardMessage = `No reward this spin.${freeSpinSuffix}`;
+      rewardColor = "#95a6df";
     }
+
+    if (machine.id === 4) {
+      if (isMachine4Normal) {
+        const triggered = Math.random() < MACHINE4_FREE_SPIN_TRIGGER_CHANCE;
+        if (triggered) {
+          const freeSpinAward = RollMachine4FreeSpinCount();
+          machine4FreeSpinsRemaining += freeSpinAward;
+          SetMachine4Mode("freeSpin");
+          rewardMessage += ` Trigger FreeSpin +${freeSpinAward}.`;
+          rewardColor = "#9fe6ff";
+          Debug.Log(`[Machine4] Trigger FreeSpin +${freeSpinAward}.`);
+        } else {
+          SetMachine4Mode("normal");
+        }
+      } else if (isMachine4FreeSpin) {
+        if (machine4FreeSpinsRemaining > 0) {
+          machine4FreeSpinsRemaining -= 1;
+        }
+        if (machine4FreeSpinsRemaining <= 0) {
+          machine4FreeSpinsRemaining = 0;
+          SetMachine4Mode("normal");
+          rewardMessage += " FreeSpin finished.";
+        } else {
+          SetMachine4Mode("freeSpin");
+          rewardMessage += ` FreeSpin left: ${machine4FreeSpinsRemaining}.`;
+        }
+      }
+    }
+    SetRewardMessage(rewardMessage, rewardColor);
   } finally {
     spinInProgress = false;
     SetMachineInteractable(true);
@@ -1913,14 +1985,14 @@ machineView.addBetButton.OnClick.AddListener(() => {
 });
 
 machineView.normalModeButton.OnClick.AddListener(() => {
-  if (selectedMachine?.id !== 4 || spinInProgress) {
+  if (selectedMachine?.id !== 4 || spinInProgress || machine4FreeSpinsRemaining > 0) {
     return;
   }
   SetMachine4Mode("normal");
 });
 
 machineView.freeSpinModeButton.OnClick.AddListener(() => {
-  if (selectedMachine?.id !== 4 || spinInProgress) {
+  if (selectedMachine?.id !== 4 || spinInProgress || machine4FreeSpinsRemaining <= 0) {
     return;
   }
   SetMachine4Mode("freeSpin");
