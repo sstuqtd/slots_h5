@@ -461,15 +461,500 @@ export class SpriteRenderer extends Renderer {
   }
 }
 
+export class UnityEvent<TArgs extends unknown[] = []> {
+  private readonly listeners = new Set<(...args: TArgs) => void>();
+
+  public AddListener(listener: (...args: TArgs) => void): void {
+    this.listeners.add(listener);
+  }
+
+  public RemoveListener(listener: (...args: TArgs) => void): void {
+    this.listeners.delete(listener);
+  }
+
+  public RemoveAllListeners(): void {
+    this.listeners.clear();
+  }
+
+  public Invoke(...args: TArgs): void {
+    for (const listener of this.listeners) {
+      listener(...args);
+    }
+  }
+}
+
+export type UILayoutMode = "absolute" | "flow";
+
+export class RectTransform extends Component {
+  public anchoredPosition = Vector2.zero;
+  public sizeDelta = Vector2.zero;
+  public pivot = new Vector2(0.5, 0.5);
+}
+
+export abstract class UIBehaviour<TElement extends HTMLElement = HTMLElement> extends MonoBehaviour {
+  public LayoutMode: UILayoutMode = "absolute";
+  public Visible = true;
+  public Interactable = true;
+
+  private attachedParent: HTMLElement | null = null;
+  private cachedRectTransform: RectTransform | null = null;
+  protected domElement: TElement | null = null;
+
+  public get Element(): TElement {
+    this.EnsureDomElement();
+    return this.domElement as TElement;
+  }
+
+  public get ContentElement(): HTMLElement {
+    return this.GetContentElement();
+  }
+
+  protected abstract CreateElement(): TElement;
+
+  protected GetContentElement(): HTMLElement {
+    return this.Element;
+  }
+
+  protected OnApplyStyle(_element: TElement): void {}
+
+  protected ApplyRectTransformStyle(element: TElement): void {
+    const rectTransform = this.GetRectTransform();
+    const width = rectTransform.sizeDelta.x;
+    const height = rectTransform.sizeDelta.y;
+
+    if (width > 0) {
+      element.style.width = `${width}px`;
+    } else {
+      element.style.removeProperty("width");
+    }
+
+    if (height > 0) {
+      element.style.height = `${height}px`;
+    } else {
+      element.style.removeProperty("height");
+    }
+
+    if (this.LayoutMode === "absolute") {
+      element.style.position = "absolute";
+      element.style.left = `${rectTransform.anchoredPosition.x}px`;
+      element.style.top = `${rectTransform.anchoredPosition.y}px`;
+      element.style.transform = `translate(${-rectTransform.pivot.x * 100}%, ${-rectTransform.pivot.y * 100}%)`;
+      return;
+    }
+
+    element.style.position = "relative";
+    element.style.removeProperty("left");
+    element.style.removeProperty("top");
+    element.style.removeProperty("transform");
+  }
+
+  public override Awake(): void {
+    this.EnsureDomElement();
+    this.RefreshParentBinding();
+    this.RefreshStyle();
+  }
+
+  public override Start(): void {
+    this.RefreshParentBinding();
+    this.RefreshStyle();
+  }
+
+  public override Update(): void {
+    this.RefreshParentBinding();
+    this.RefreshStyle();
+  }
+
+  public override OnEnable(): void {
+    this.RefreshStyle();
+  }
+
+  public override OnDisable(): void {
+    if (this.domElement !== null) {
+      this.domElement.hidden = true;
+    }
+  }
+
+  public override OnDestroy(): void {
+    if (this.domElement !== null) {
+      this.domElement.remove();
+      this.domElement = null;
+      this.attachedParent = null;
+    }
+  }
+
+  protected GetRectTransform(): RectTransform {
+    if (this.cachedRectTransform !== null) {
+      return this.cachedRectTransform;
+    }
+
+    let rectTransform = this.gameObject.GetComponent(RectTransform);
+    if (rectTransform === null) {
+      rectTransform = this.gameObject.AddComponent(RectTransform);
+    }
+    this.cachedRectTransform = rectTransform;
+    return rectTransform;
+  }
+
+  private EnsureDomElement(): void {
+    if (this.domElement !== null) {
+      return;
+    }
+    const element = this.CreateElement();
+    element.style.boxSizing = "border-box";
+    element.style.userSelect = "none";
+    this.domElement = element;
+  }
+
+  private RefreshParentBinding(): void {
+    this.EnsureDomElement();
+    const parentElement = this.ResolveParentElement();
+    if (parentElement === null || this.domElement === null) {
+      return;
+    }
+
+    if (this.attachedParent === parentElement && this.domElement.parentElement === parentElement) {
+      return;
+    }
+
+    parentElement.appendChild(this.domElement);
+    this.attachedParent = parentElement;
+  }
+
+  private ResolveParentElement(): HTMLElement | null {
+    const parentTransform = this.transform.parent;
+    if (parentTransform !== null) {
+      const parentGameObject = parentTransform.gameObject;
+      const parentScrollRect = parentGameObject.GetComponent(ScrollRect);
+      if (parentScrollRect !== null) {
+        return parentScrollRect.ContentElement;
+      }
+
+      const parentCanvas = parentGameObject.GetComponent(Canvas);
+      if (parentCanvas !== null) {
+        return parentCanvas.ContentElement;
+      }
+
+      const parentPanel = parentGameObject.GetComponent(Panel);
+      if (parentPanel !== null) {
+        return parentPanel.ContentElement;
+      }
+
+      const parentImage = parentGameObject.GetComponent(Image);
+      if (parentImage !== null) {
+        return parentImage.ContentElement;
+      }
+    }
+
+    const scene = this.gameObject.scene;
+    if (scene === null || scene.engine === null) {
+      return null;
+    }
+
+    const canvases = scene.GetComponentsInScene(Canvas);
+    if (canvases.length > 0) {
+      return canvases[0].ContentElement;
+    }
+    return scene.engine.UIRootElement;
+  }
+
+  private RefreshStyle(): void {
+    if (this.domElement === null) {
+      return;
+    }
+
+    const isVisible = this.Visible && this.enabled && this.gameObject.activeInHierarchy;
+    this.domElement.hidden = !isVisible;
+    if (!isVisible) {
+      return;
+    }
+
+    this.domElement.style.pointerEvents = this.Interactable ? "auto" : "none";
+    this.ApplyRectTransformStyle(this.domElement);
+    this.OnApplyStyle(this.domElement);
+  }
+}
+
+export class Canvas extends UIBehaviour<HTMLDivElement> {
+  public BackgroundColor = "transparent";
+
+  protected override CreateElement(): HTMLDivElement {
+    return document.createElement("div");
+  }
+
+  protected override ApplyRectTransformStyle(element: HTMLDivElement): void {
+    element.style.position = "absolute";
+    element.style.left = "0";
+    element.style.top = "0";
+    element.style.width = "100%";
+    element.style.height = "100%";
+    element.style.transform = "none";
+  }
+
+  protected override OnApplyStyle(element: HTMLDivElement): void {
+    element.style.display = "block";
+    element.style.background = this.BackgroundColor;
+  }
+}
+
+export type UIAxisAlignment = "flex-start" | "center" | "flex-end" | "stretch" | "space-between" | "space-around";
+
+export class Panel extends UIBehaviour<HTMLDivElement> {
+  public Direction: "row" | "column" = "column";
+  public Gap = 0;
+  public Padding = 0;
+  public BackgroundColor = "transparent";
+  public BorderColor = "transparent";
+  public BorderWidth = 0;
+  public BorderRadius = 0;
+  public AlignItems: UIAxisAlignment = "stretch";
+  public JustifyContent: UIAxisAlignment = "flex-start";
+  public OverflowX: "visible" | "hidden" | "auto" = "visible";
+  public OverflowY: "visible" | "hidden" | "auto" = "visible";
+
+  protected override CreateElement(): HTMLDivElement {
+    return document.createElement("div");
+  }
+
+  protected override OnApplyStyle(element: HTMLDivElement): void {
+    element.style.display = "flex";
+    element.style.flexDirection = this.Direction;
+    element.style.gap = `${this.Gap}px`;
+    element.style.padding = `${this.Padding}px`;
+    element.style.alignItems = this.AlignItems;
+    element.style.justifyContent = this.JustifyContent;
+    element.style.background = this.BackgroundColor;
+    element.style.borderColor = this.BorderColor;
+    element.style.borderStyle = this.BorderWidth > 0 ? "solid" : "none";
+    element.style.borderWidth = `${this.BorderWidth}px`;
+    element.style.borderRadius = `${this.BorderRadius}px`;
+    element.style.overflowX = this.OverflowX;
+    element.style.overflowY = this.OverflowY;
+  }
+}
+
+export class Text extends UIBehaviour<HTMLDivElement> {
+  public override LayoutMode: UILayoutMode = "flow";
+  public override Interactable = false;
+  public Value = "";
+  public FontSize = 16;
+  public FontWeight = "400";
+  public Color = "#ffffff";
+  public TextAlign: "left" | "center" | "right" = "left";
+
+  protected override CreateElement(): HTMLDivElement {
+    return document.createElement("div");
+  }
+
+  protected override OnApplyStyle(element: HTMLDivElement): void {
+    element.textContent = this.Value;
+    element.style.fontSize = `${this.FontSize}px`;
+    element.style.fontWeight = this.FontWeight;
+    element.style.color = this.Color;
+    element.style.textAlign = this.TextAlign;
+    element.style.whiteSpace = "pre-wrap";
+  }
+}
+
+export class Button extends UIBehaviour<HTMLButtonElement> {
+  public override LayoutMode: UILayoutMode = "flow";
+  public Label = "Button";
+  public FontSize = 16;
+  public TextColor = "#ffffff";
+  public BackgroundColor = "#2e7dff";
+  public BorderColor = "#2e7dff";
+  public BorderWidth = 1;
+  public BorderRadius = 8;
+  public Padding = "10px 16px";
+  public readonly OnClick = new UnityEvent<[]>();
+
+  private readonly HandleClick = (): void => {
+    this.OnClick.Invoke();
+  };
+
+  protected override CreateElement(): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    return button;
+  }
+
+  public override Awake(): void {
+    super.Awake();
+    this.Element.addEventListener("click", this.HandleClick);
+  }
+
+  public override OnDestroy(): void {
+    if (this.domElement !== null) {
+      this.domElement.removeEventListener("click", this.HandleClick);
+    }
+    super.OnDestroy();
+  }
+
+  protected override OnApplyStyle(element: HTMLButtonElement): void {
+    element.textContent = this.Label;
+    element.style.fontSize = `${this.FontSize}px`;
+    element.style.color = this.TextColor;
+    element.style.background = this.BackgroundColor;
+    element.style.borderColor = this.BorderColor;
+    element.style.borderWidth = `${this.BorderWidth}px`;
+    element.style.borderStyle = this.BorderWidth > 0 ? "solid" : "none";
+    element.style.borderRadius = `${this.BorderRadius}px`;
+    element.style.padding = this.Padding;
+    element.style.cursor = this.Interactable ? "pointer" : "not-allowed";
+    element.disabled = !this.Interactable;
+  }
+}
+
+export class InputField extends UIBehaviour<HTMLInputElement> {
+  public override LayoutMode: UILayoutMode = "flow";
+  public Text = "";
+  public Placeholder = "";
+  public InputType: "text" | "email" | "tel" | "password" = "text";
+  public FontSize = 16;
+  public TextColor = "#f3f6ff";
+  public BackgroundColor = "#1e2230";
+  public BorderColor = "#3f4863";
+  public BorderRadius = 8;
+  public Padding = "10px 12px";
+  public readonly OnValueChanged = new UnityEvent<[string]>();
+
+  private readonly HandleInput = (): void => {
+    const value = this.Element.value;
+    this.Text = value;
+    this.OnValueChanged.Invoke(value);
+  };
+
+  protected override CreateElement(): HTMLInputElement {
+    return document.createElement("input");
+  }
+
+  public override Awake(): void {
+    super.Awake();
+    this.Element.addEventListener("input", this.HandleInput);
+  }
+
+  public override OnDestroy(): void {
+    if (this.domElement !== null) {
+      this.domElement.removeEventListener("input", this.HandleInput);
+    }
+    super.OnDestroy();
+  }
+
+  protected override OnApplyStyle(element: HTMLInputElement): void {
+    element.type = this.InputType;
+    element.placeholder = this.Placeholder;
+    if (element.value !== this.Text) {
+      element.value = this.Text;
+    }
+    element.style.fontSize = `${this.FontSize}px`;
+    element.style.color = this.TextColor;
+    element.style.background = this.BackgroundColor;
+    element.style.borderColor = this.BorderColor;
+    element.style.borderWidth = "1px";
+    element.style.borderStyle = "solid";
+    element.style.borderRadius = `${this.BorderRadius}px`;
+    element.style.padding = this.Padding;
+    element.disabled = !this.Interactable;
+  }
+}
+
+export class Image extends UIBehaviour<HTMLDivElement> {
+  public override LayoutMode: UILayoutMode = "flow";
+  public BackgroundColor = "#2a2f44";
+  public BorderColor = "#5c647f";
+  public BorderWidth = 1;
+  public BorderRadius = 12;
+  public SpriteUrl: string | null = null;
+  public BackgroundSize = "cover";
+  public BackgroundPosition = "center";
+
+  protected override CreateElement(): HTMLDivElement {
+    return document.createElement("div");
+  }
+
+  protected override OnApplyStyle(element: HTMLDivElement): void {
+    element.style.background = this.BackgroundColor;
+    element.style.borderColor = this.BorderColor;
+    element.style.borderStyle = this.BorderWidth > 0 ? "solid" : "none";
+    element.style.borderWidth = `${this.BorderWidth}px`;
+    element.style.borderRadius = `${this.BorderRadius}px`;
+    if (this.SpriteUrl !== null) {
+      element.style.backgroundImage = `url("${this.SpriteUrl}")`;
+      element.style.backgroundSize = this.BackgroundSize;
+      element.style.backgroundPosition = this.BackgroundPosition;
+      element.style.backgroundRepeat = "no-repeat";
+    } else {
+      element.style.removeProperty("background-image");
+    }
+  }
+}
+
+export class ScrollRect extends UIBehaviour<HTMLDivElement> {
+  public override LayoutMode: UILayoutMode = "flow";
+  public Horizontal = true;
+  public Vertical = false;
+  public ContentGap = 12;
+  public Padding = 8;
+  public BackgroundColor = "rgba(0, 0, 0, 0.15)";
+  private contentElement: HTMLDivElement | null = null;
+
+  public override Interactable = true;
+
+  public get ContentElement(): HTMLDivElement {
+    this.EnsureContentElement();
+    return this.contentElement as HTMLDivElement;
+  }
+
+  protected override CreateElement(): HTMLDivElement {
+    const viewport = document.createElement("div");
+    const content = document.createElement("div");
+    viewport.appendChild(content);
+    this.contentElement = content;
+    return viewport;
+  }
+
+  protected override GetContentElement(): HTMLElement {
+    return this.ContentElement;
+  }
+
+  protected override OnApplyStyle(element: HTMLDivElement): void {
+    element.style.display = "block";
+    element.style.background = this.BackgroundColor;
+    element.style.overflowX = this.Horizontal ? "auto" : "hidden";
+    element.style.overflowY = this.Vertical ? "auto" : "hidden";
+    element.style.scrollBehavior = "smooth";
+
+    const content = this.ContentElement;
+    content.style.display = "flex";
+    content.style.flexDirection = this.Horizontal ? "row" : "column";
+    content.style.gap = `${this.ContentGap}px`;
+    content.style.padding = `${this.Padding}px`;
+    content.style.alignItems = "stretch";
+    content.style.width = this.Horizontal ? "max-content" : "100%";
+    content.style.minHeight = this.Horizontal ? "100%" : "0";
+  }
+
+  private EnsureContentElement(): void {
+    if (this.contentElement !== null) {
+      return;
+    }
+    this.Element;
+  }
+}
+
 type MonoState = {
   awake: boolean;
   started: boolean;
-  enabled: boolean;
+  enabledInHierarchy: boolean;
 };
 
 export class Scene {
   private readonly rootGameObjects: GameObject[] = [];
   private readonly monoState = new WeakMap<MonoBehaviour, MonoState>();
+  private engineRef: Engine | null = null;
+
+  public get engine(): Engine | null {
+    return this.engineRef;
+  }
 
   public AddGameObject(gameObject: GameObject): void {
     if (gameObject.scene !== null && gameObject.scene !== this) {
@@ -490,6 +975,10 @@ export class Scene {
     return components;
   }
 
+  public _SetEngine(engine: Engine): void {
+    this.engineRef = engine;
+  }
+
   public _OnComponentAdded(component: Component): void {
     if (!(component instanceof MonoBehaviour)) {
       return;
@@ -497,7 +986,7 @@ export class Scene {
     this.monoState.set(component, {
       awake: false,
       started: false,
-      enabled: component.enabled,
+      enabledInHierarchy: false,
     });
   }
 
@@ -505,34 +994,30 @@ export class Scene {
     const monoBehaviours = this.GetComponentsInScene(MonoBehaviour);
     for (const behaviour of monoBehaviours) {
       const state = this.EnsureState(behaviour);
-      if (!behaviour.gameObject.activeInHierarchy) {
-        continue;
-      }
-
-      if (!state.awake) {
+      const isGameObjectActive = behaviour.gameObject.activeInHierarchy;
+      if (!state.awake && isGameObjectActive) {
         behaviour.Awake?.();
         state.awake = true;
-        if (behaviour.enabled) {
-          behaviour.OnEnable?.();
-          state.enabled = true;
-        }
       }
 
-      if (state.awake && !state.started && behaviour.enabled) {
+      const shouldEnable = state.awake && isGameObjectActive && behaviour.enabled;
+      if (shouldEnable && !state.enabledInHierarchy) {
+        behaviour.OnEnable?.();
+        state.enabledInHierarchy = true;
+      }
+
+      if (shouldEnable && !state.started) {
         behaviour.Start?.();
         state.started = true;
       }
 
-      if (state.started && behaviour.enabled) {
+      if (shouldEnable) {
         behaviour.Update?.();
       }
 
-      if (state.enabled && !behaviour.enabled) {
+      if (state.enabledInHierarchy && !shouldEnable) {
         behaviour.OnDisable?.();
-        state.enabled = false;
-      } else if (!state.enabled && behaviour.enabled) {
-        behaviour.OnEnable?.();
-        state.enabled = true;
+        state.enabledInHierarchy = false;
       }
     }
   }
@@ -545,7 +1030,7 @@ export class Scene {
       this.monoState.set(component, {
         awake: false,
         started: false,
-        enabled: component.enabled,
+        enabledInHierarchy: false,
       });
     }
   }
@@ -559,7 +1044,7 @@ export class Scene {
     const created: MonoState = {
       awake: false,
       started: false,
-      enabled: behaviour.enabled,
+      enabledInHierarchy: false,
     };
     this.monoState.set(behaviour, created);
     return created;
@@ -584,10 +1069,15 @@ export class Scene {
 export class Engine {
   private readonly context: CanvasRenderingContext2D;
   private readonly hostWindow: Window | null;
+  private readonly uiRootElement: HTMLDivElement | null;
   private running = false;
   private previousTimestamp = 0;
   private frameHandle = -1;
   public readonly scene: Scene;
+
+  public get UIRootElement(): HTMLDivElement | null {
+    return this.uiRootElement;
+  }
 
   public constructor(canvas: HTMLCanvasElement, scene = new Scene()) {
     this.scene = scene;
@@ -598,6 +1088,9 @@ export class Engine {
 
     this.context = context;
     this.hostWindow = canvas.ownerDocument.defaultView;
+    this.uiRootElement = this.InitializeUIRoot(canvas);
+    this.scene._SetEngine(this);
+
     if (this.hostWindow !== null) {
       Input.Initialize(this.hostWindow);
     } else {
@@ -648,6 +1141,44 @@ export class Engine {
     }
   }
 
+  private InitializeUIRoot(canvas: HTMLCanvasElement): HTMLDivElement | null {
+    const currentParent = canvas.parentElement;
+    if (currentParent === null) {
+      return null;
+    }
+
+    let container: HTMLElement = currentParent;
+    if (currentParent.dataset.h5unityCanvasContainer !== "true") {
+      container = canvas.ownerDocument.createElement("div");
+      container.dataset.h5unityCanvasContainer = "true";
+      container.style.position = "relative";
+      container.style.width = `${canvas.width}px`;
+      container.style.height = `${canvas.height}px`;
+      canvas.style.display = "block";
+      currentParent.insertBefore(container, canvas);
+      container.appendChild(canvas);
+    }
+
+    for (const child of Array.from(container.children)) {
+      if (child instanceof HTMLDivElement && child.dataset.h5unityUiRoot === "true") {
+        return child;
+      }
+    }
+
+    const uiRoot = canvas.ownerDocument.createElement("div");
+    uiRoot.dataset.h5unityUiRoot = "true";
+    uiRoot.style.position = "absolute";
+    uiRoot.style.left = "0";
+    uiRoot.style.top = "0";
+    uiRoot.style.width = "100%";
+    uiRoot.style.height = "100%";
+    uiRoot.style.overflow = "hidden";
+    uiRoot.style.zIndex = "10";
+    uiRoot.style.pointerEvents = "none";
+    container.appendChild(uiRoot);
+    return uiRoot;
+  }
+
   private ScheduleNextFrame(callback: (timestamp: number) => void): number {
     if (this.hostWindow !== null) {
       return this.hostWindow.requestAnimationFrame(callback);
@@ -679,8 +1210,18 @@ export const UnityEngine = {
   MonoBehaviour,
   GameObject,
   Transform,
+  RectTransform,
   Renderer,
   SpriteRenderer,
+  UnityEvent,
+  UIBehaviour,
+  Canvas,
+  Panel,
+  Text,
+  Button,
+  InputField,
+  Image,
+  ScrollRect,
   Scene,
   Engine,
   Debug,

@@ -5,6 +5,11 @@
 - `engine/`：引擎目录（Unity 风格 API 兼容层 + 生命周期 + 输入 + 基础渲染）。
 - `game/`：游戏目录（示例游戏逻辑，直接基于引擎 API 开发）。
 
+当前示例游戏流程：
+
+- 登录页：支持邮箱登录 / 手机登录切换
+- 大厅页：横向滚动 10 个老虎机入口卡片（`Status: BASE`）
+
 ## 目录结构
 
 ```text
@@ -64,6 +69,16 @@ python3 -m http.server 8080
   - `SpriteRenderer`
   - `Scene`
   - `Engine`
+- UGUI 风格 UI（新增）
+  - `RectTransform`
+  - `Canvas`
+  - `Panel`
+  - `Text`
+  - `Button`
+  - `InputField`
+  - `Image`
+  - `ScrollRect`
+  - `UnityEvent`
 
 生命周期支持：
 
