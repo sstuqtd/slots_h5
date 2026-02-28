@@ -1,0 +1,16 @@
+{
+  "name": "slots_h5",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "engine",
+    "game"
+  ],
+  "scripts": {
+    "build": "npm run build -w @h5unity/engine && npm run build -w h5-game",
+    "typecheck": "npm run typecheck -w @h5unity/engine && npm run typecheck -w h5-game"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
