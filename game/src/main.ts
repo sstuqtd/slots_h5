@@ -947,14 +947,14 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   const machine4ParamRowPanel = machine4ParamRowNode.AddComponent(Panel);
   machine4ParamRowPanel.LayoutMode = "absolute";
   machine4ParamRowPanel.Direction = "column";
-  machine4ParamRowPanel.Gap = 8;
+  machine4ParamRowPanel.Gap = 6;
   machine4ParamRowPanel.AlignItems = "stretch";
   machine4ParamRowPanel.Padding = 10;
   machine4ParamRowPanel.BackgroundColor = "rgba(15, 20, 38, 0.75)";
   machine4ParamRowPanel.BorderColor = "#4f6096";
   machine4ParamRowPanel.BorderWidth = 1;
   machine4ParamRowPanel.BorderRadius = 10;
-  SetRect(machine4ParamRowNode, canvas.width - EDITOR_SIDE_MARGIN, canvas.height - EDITOR_SIDE_MARGIN, 560, 214, 1, 1);
+  SetRect(machine4ParamRowNode, canvas.width - EDITOR_SIDE_MARGIN, canvas.height / 2, 360, 430, 1, 0.5);
 
   const machine4ParamHeaderRowNode = CreateChild(machine4ParamRowNode, "Machine4ParamHeaderRow");
   const machine4ParamHeaderRowPanel = machine4ParamHeaderRowNode.AddComponent(Panel);
@@ -983,72 +983,40 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   machine4ParamApplyButton.BorderColor = "#7a8fd5";
   machine4ParamApplyButton.BorderRadius = 8;
 
-  const startupParamRowNode = CreateChild(machine4ParamRowNode, "StartupParamRow");
-  const startupParamRowPanel = startupParamRowNode.AddComponent(Panel);
-  startupParamRowPanel.LayoutMode = "flow";
-  startupParamRowPanel.Direction = "row";
-  startupParamRowPanel.Gap = 8;
-  startupParamRowPanel.AlignItems = "center";
-  startupParamRowPanel.JustifyContent = "flex-start";
+  const CreateMachine4ParamFieldRow = (name: string, labelText: string, placeholder: string): InputField => {
+    const rowNode = CreateChild(machine4ParamRowNode, name);
+    const rowPanel = rowNode.AddComponent(Panel);
+    rowPanel.LayoutMode = "flow";
+    rowPanel.Direction = "row";
+    rowPanel.Gap = 10;
+    rowPanel.AlignItems = "center";
+    rowPanel.JustifyContent = "space-between";
 
-  const gapLabel = CreateLabel(startupParamRowNode, "GapLabel", "Gap(ms)", 12);
-  gapLabel.Color = "#c6d2f6";
-  const machine4ColumnGapInput = CreateMachine4ParamInput(startupParamRowNode, "ColumnGapInput", "110", 72);
+    const fieldLabel = CreateLabel(rowNode, `${name}Label`, labelText, 12);
+    fieldLabel.Color = "#c6d2f6";
+    const labelElement = fieldLabel.Element;
+    labelElement.style.minWidth = "156px";
 
-  const startupDurationLabel = CreateLabel(startupParamRowNode, "StartupDurationLabel", "Startup(ms)", 12);
-  startupDurationLabel.Color = "#c6d2f6";
-  const machine4StartupDurationInput = CreateMachine4ParamInput(startupParamRowNode, "StartupDurationInput", "400", 72);
+    return CreateMachine4ParamInput(rowNode, `${name}Input`, placeholder, 110);
+  };
 
-  const startupStepLabel = CreateLabel(startupParamRowNode, "StartupStepLabel", "Startup Step(ms)", 12);
-  startupStepLabel.Color = "#c6d2f6";
-  const machine4StartupStepInput = CreateMachine4ParamInput(startupParamRowNode, "StartupStepInput", "72", 72);
-
-  const speedParamRowNode = CreateChild(machine4ParamRowNode, "SpeedParamRow");
-  const speedParamRowPanel = speedParamRowNode.AddComponent(Panel);
-  speedParamRowPanel.LayoutMode = "flow";
-  speedParamRowPanel.Direction = "row";
-  speedParamRowPanel.Gap = 8;
-  speedParamRowPanel.AlignItems = "center";
-  speedParamRowPanel.JustifyContent = "flex-start";
-
-  const accelerateDurationLabel = CreateLabel(speedParamRowNode, "AccelerateDurationLabel", "Accel(ms)", 12);
-  accelerateDurationLabel.Color = "#c6d2f6";
-  const machine4AccelerateDurationInput = CreateMachine4ParamInput(
-    speedParamRowNode,
-    "AccelerateDurationInput",
+  const machine4ColumnGapInput = CreateMachine4ParamFieldRow("ColumnGapRow", "Column Start Gap(ms)", "110");
+  const machine4StartupDurationInput = CreateMachine4ParamFieldRow("StartupDurationRow", "Startup Duration(ms)", "400");
+  const machine4StartupStepInput = CreateMachine4ParamFieldRow("StartupStepRow", "Startup Step(ms)", "72");
+  const machine4AccelerateDurationInput = CreateMachine4ParamFieldRow(
+    "AccelerateDurationRow",
+    "Accelerate Duration(ms)",
     "240",
-    68,
   );
-  const accelerateStepLabel = CreateLabel(speedParamRowNode, "AccelerateStepLabel", "Step", 12);
-  accelerateStepLabel.Color = "#c6d2f6";
-  const machine4AccelerateStepInput = CreateMachine4ParamInput(speedParamRowNode, "AccelerateStepInput", "52", 60);
-
-  const constantDurationLabel = CreateLabel(speedParamRowNode, "ConstantDurationLabel", "Const(ms)", 12);
-  constantDurationLabel.Color = "#c6d2f6";
-  const machine4ConstantDurationInput = CreateMachine4ParamInput(speedParamRowNode, "ConstantDurationInput", "380", 68);
-  const constantStepLabel = CreateLabel(speedParamRowNode, "ConstantStepLabel", "Step", 12);
-  constantStepLabel.Color = "#c6d2f6";
-  const machine4ConstantStepInput = CreateMachine4ParamInput(speedParamRowNode, "ConstantStepInput", "48", 60);
-
-  const decelerateParamRowNode = CreateChild(machine4ParamRowNode, "DecelerateParamRow");
-  const decelerateParamRowPanel = decelerateParamRowNode.AddComponent(Panel);
-  decelerateParamRowPanel.LayoutMode = "flow";
-  decelerateParamRowPanel.Direction = "row";
-  decelerateParamRowPanel.Gap = 8;
-  decelerateParamRowPanel.AlignItems = "center";
-  decelerateParamRowPanel.JustifyContent = "flex-start";
-
-  const decelerateDurationLabel = CreateLabel(decelerateParamRowNode, "DecelerateDurationLabel", "Decel(ms)", 12);
-  decelerateDurationLabel.Color = "#c6d2f6";
-  const machine4DecelerateDurationInput = CreateMachine4ParamInput(
-    decelerateParamRowNode,
-    "DecelerateDurationInput",
+  const machine4AccelerateStepInput = CreateMachine4ParamFieldRow("AccelerateStepRow", "Accelerate Step(ms)", "52");
+  const machine4ConstantDurationInput = CreateMachine4ParamFieldRow("ConstantDurationRow", "Constant Duration(ms)", "380");
+  const machine4ConstantStepInput = CreateMachine4ParamFieldRow("ConstantStepRow", "Constant Step(ms)", "48");
+  const machine4DecelerateDurationInput = CreateMachine4ParamFieldRow(
+    "DecelerateDurationRow",
+    "Decelerate Duration(ms)",
     "320",
-    68,
   );
-  const decelerateStepLabel = CreateLabel(decelerateParamRowNode, "DecelerateStepLabel", "Step", 12);
-  decelerateStepLabel.Color = "#c6d2f6";
-  const machine4DecelerateStepInput = CreateMachine4ParamInput(decelerateParamRowNode, "DecelerateStepInput", "78", 60);
+  const machine4DecelerateStepInput = CreateMachine4ParamFieldRow("DecelerateStepRow", "Decelerate Step(ms)", "78");
 
   machine4ParamRowNode.SetActive(false);
 
