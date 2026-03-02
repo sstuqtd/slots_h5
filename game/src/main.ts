@@ -68,6 +68,7 @@ type MachineViewRefs = {
   normalModeButton: Button;
   freeSpinModeButton: Button;
   machine4SpeedToggleButton: Button;
+  machine4ParamDragHandleButton: Button;
   machine4ParamApplyButton: Button;
   machine4ColumnGapInput: InputField;
   machine4StartupDurationInput: InputField;
@@ -944,7 +945,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
 
   const machine4ParamRowNode = CreateChild(pageRoot, "Machine4ParamRow");
   const machine4ParamRowPanel = machine4ParamRowNode.AddComponent(Panel);
-  machine4ParamRowPanel.LayoutMode = "flow";
+  machine4ParamRowPanel.LayoutMode = "absolute";
   machine4ParamRowPanel.Direction = "column";
   machine4ParamRowPanel.Gap = 8;
   machine4ParamRowPanel.AlignItems = "stretch";
@@ -953,10 +954,34 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   machine4ParamRowPanel.BorderColor = "#4f6096";
   machine4ParamRowPanel.BorderWidth = 1;
   machine4ParamRowPanel.BorderRadius = 10;
-  SetRect(machine4ParamRowNode, 0, 0, MACHINE_VIEW_CENTER_WIDTH, 156);
+  SetRect(machine4ParamRowNode, canvas.width - EDITOR_SIDE_MARGIN, canvas.height - EDITOR_SIDE_MARGIN, 560, 214, 1, 1);
 
-  const machine4ParamTitle = CreateLabel(machine4ParamRowNode, "Machine4ParamTitle", "Machine4 Reel Params", 14);
-  machine4ParamTitle.FontWeight = "700";
+  const machine4ParamHeaderRowNode = CreateChild(machine4ParamRowNode, "Machine4ParamHeaderRow");
+  const machine4ParamHeaderRowPanel = machine4ParamHeaderRowNode.AddComponent(Panel);
+  machine4ParamHeaderRowPanel.LayoutMode = "flow";
+  machine4ParamHeaderRowPanel.Direction = "row";
+  machine4ParamHeaderRowPanel.Gap = 8;
+  machine4ParamHeaderRowPanel.AlignItems = "center";
+  machine4ParamHeaderRowPanel.JustifyContent = "space-between";
+
+  const machine4ParamDragHandleNode = CreateChild(machine4ParamHeaderRowNode, "Machine4ParamDragHandle");
+  const machine4ParamDragHandleButton = machine4ParamDragHandleNode.AddComponent(Button);
+  machine4ParamDragHandleButton.LayoutMode = "flow";
+  machine4ParamDragHandleButton.Label = "Machine4 Reel Params";
+  machine4ParamDragHandleButton.FontSize = 14;
+  machine4ParamDragHandleButton.Padding = "6px 10px";
+  machine4ParamDragHandleButton.BackgroundColor = "#51639f";
+  machine4ParamDragHandleButton.BorderColor = "#8ba2ef";
+  machine4ParamDragHandleButton.BorderRadius = 7;
+
+  const machine4ParamApplyButtonNode = CreateChild(machine4ParamHeaderRowNode, "Machine4ParamApplyButton");
+  const machine4ParamApplyButton = machine4ParamApplyButtonNode.AddComponent(Button);
+  machine4ParamApplyButton.LayoutMode = "flow";
+  machine4ParamApplyButton.Label = "Apply Params";
+  machine4ParamApplyButton.Padding = "8px 12px";
+  machine4ParamApplyButton.BackgroundColor = "#4f5d8f";
+  machine4ParamApplyButton.BorderColor = "#7a8fd5";
+  machine4ParamApplyButton.BorderRadius = 8;
 
   const startupParamRowNode = CreateChild(machine4ParamRowNode, "StartupParamRow");
   const startupParamRowPanel = startupParamRowNode.AddComponent(Panel);
@@ -978,61 +1003,52 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   startupStepLabel.Color = "#c6d2f6";
   const machine4StartupStepInput = CreateMachine4ParamInput(startupParamRowNode, "StartupStepInput", "72", 72);
 
-  const stateParamRowNode = CreateChild(machine4ParamRowNode, "StateParamRow");
-  const stateParamRowPanel = stateParamRowNode.AddComponent(Panel);
-  stateParamRowPanel.LayoutMode = "flow";
-  stateParamRowPanel.Direction = "row";
-  stateParamRowPanel.Gap = 8;
-  stateParamRowPanel.AlignItems = "center";
-  stateParamRowPanel.JustifyContent = "flex-start";
+  const speedParamRowNode = CreateChild(machine4ParamRowNode, "SpeedParamRow");
+  const speedParamRowPanel = speedParamRowNode.AddComponent(Panel);
+  speedParamRowPanel.LayoutMode = "flow";
+  speedParamRowPanel.Direction = "row";
+  speedParamRowPanel.Gap = 8;
+  speedParamRowPanel.AlignItems = "center";
+  speedParamRowPanel.JustifyContent = "flex-start";
 
-  const accelerateDurationLabel = CreateLabel(stateParamRowNode, "AccelerateDurationLabel", "Accel(ms)", 12);
+  const accelerateDurationLabel = CreateLabel(speedParamRowNode, "AccelerateDurationLabel", "Accel(ms)", 12);
   accelerateDurationLabel.Color = "#c6d2f6";
   const machine4AccelerateDurationInput = CreateMachine4ParamInput(
-    stateParamRowNode,
+    speedParamRowNode,
     "AccelerateDurationInput",
     "240",
     68,
   );
-  const accelerateStepLabel = CreateLabel(stateParamRowNode, "AccelerateStepLabel", "Step", 12);
+  const accelerateStepLabel = CreateLabel(speedParamRowNode, "AccelerateStepLabel", "Step", 12);
   accelerateStepLabel.Color = "#c6d2f6";
-  const machine4AccelerateStepInput = CreateMachine4ParamInput(stateParamRowNode, "AccelerateStepInput", "52", 60);
+  const machine4AccelerateStepInput = CreateMachine4ParamInput(speedParamRowNode, "AccelerateStepInput", "52", 60);
 
-  const constantDurationLabel = CreateLabel(stateParamRowNode, "ConstantDurationLabel", "Const(ms)", 12);
+  const constantDurationLabel = CreateLabel(speedParamRowNode, "ConstantDurationLabel", "Const(ms)", 12);
   constantDurationLabel.Color = "#c6d2f6";
-  const machine4ConstantDurationInput = CreateMachine4ParamInput(stateParamRowNode, "ConstantDurationInput", "380", 68);
-  const constantStepLabel = CreateLabel(stateParamRowNode, "ConstantStepLabel", "Step", 12);
+  const machine4ConstantDurationInput = CreateMachine4ParamInput(speedParamRowNode, "ConstantDurationInput", "380", 68);
+  const constantStepLabel = CreateLabel(speedParamRowNode, "ConstantStepLabel", "Step", 12);
   constantStepLabel.Color = "#c6d2f6";
-  const machine4ConstantStepInput = CreateMachine4ParamInput(stateParamRowNode, "ConstantStepInput", "48", 60);
+  const machine4ConstantStepInput = CreateMachine4ParamInput(speedParamRowNode, "ConstantStepInput", "48", 60);
 
-  const decelerateDurationLabel = CreateLabel(stateParamRowNode, "DecelerateDurationLabel", "Decel(ms)", 12);
+  const decelerateParamRowNode = CreateChild(machine4ParamRowNode, "DecelerateParamRow");
+  const decelerateParamRowPanel = decelerateParamRowNode.AddComponent(Panel);
+  decelerateParamRowPanel.LayoutMode = "flow";
+  decelerateParamRowPanel.Direction = "row";
+  decelerateParamRowPanel.Gap = 8;
+  decelerateParamRowPanel.AlignItems = "center";
+  decelerateParamRowPanel.JustifyContent = "flex-start";
+
+  const decelerateDurationLabel = CreateLabel(decelerateParamRowNode, "DecelerateDurationLabel", "Decel(ms)", 12);
   decelerateDurationLabel.Color = "#c6d2f6";
   const machine4DecelerateDurationInput = CreateMachine4ParamInput(
-    stateParamRowNode,
+    decelerateParamRowNode,
     "DecelerateDurationInput",
     "320",
     68,
   );
-  const decelerateStepLabel = CreateLabel(stateParamRowNode, "DecelerateStepLabel", "Step", 12);
+  const decelerateStepLabel = CreateLabel(decelerateParamRowNode, "DecelerateStepLabel", "Step", 12);
   decelerateStepLabel.Color = "#c6d2f6";
-  const machine4DecelerateStepInput = CreateMachine4ParamInput(stateParamRowNode, "DecelerateStepInput", "78", 60);
-
-  const machine4ParamActionRowNode = CreateChild(machine4ParamRowNode, "Machine4ParamActionRow");
-  const machine4ParamActionRowPanel = machine4ParamActionRowNode.AddComponent(Panel);
-  machine4ParamActionRowPanel.LayoutMode = "flow";
-  machine4ParamActionRowPanel.Direction = "row";
-  machine4ParamActionRowPanel.Gap = 8;
-  machine4ParamActionRowPanel.AlignItems = "center";
-  machine4ParamActionRowPanel.JustifyContent = "flex-end";
-
-  const machine4ParamApplyButtonNode = CreateChild(machine4ParamActionRowNode, "Machine4ParamApplyButton");
-  const machine4ParamApplyButton = machine4ParamApplyButtonNode.AddComponent(Button);
-  machine4ParamApplyButton.LayoutMode = "flow";
-  machine4ParamApplyButton.Label = "Apply Params";
-  machine4ParamApplyButton.Padding = "8px 12px";
-  machine4ParamApplyButton.BackgroundColor = "#4f5d8f";
-  machine4ParamApplyButton.BorderColor = "#7a8fd5";
-  machine4ParamApplyButton.BorderRadius = 8;
+  const machine4DecelerateStepInput = CreateMachine4ParamInput(decelerateParamRowNode, "DecelerateStepInput", "78", 60);
 
   machine4ParamRowNode.SetActive(false);
 
@@ -1317,6 +1333,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
     normalModeButton,
     freeSpinModeButton,
     machine4SpeedToggleButton,
+    machine4ParamDragHandleButton,
     machine4ParamApplyButton,
     machine4ColumnGapInput,
     machine4StartupDurationInput,
@@ -1628,6 +1645,7 @@ const SetMachine4ModeVisible = (visible: boolean): void => {
   machineView.normalModeButton.Interactable = visible;
   machineView.freeSpinModeButton.Interactable = false;
   machineView.machine4SpeedToggleButton.Interactable = visible;
+  machineView.machine4ParamDragHandleButton.Interactable = visible;
   machineView.machine4ParamApplyButton.Interactable = visible;
   machineView.machine4ColumnGapInput.Interactable = visible;
   machineView.machine4StartupDurationInput.Interactable = visible;
@@ -1898,6 +1916,7 @@ const SetMachineInteractable = (value: boolean): void => {
   machineView.normalModeButton.Interactable = machine4ModeInteractable && machine4FreeSpinsRemaining <= 0;
   machineView.freeSpinModeButton.Interactable = false;
   machineView.machine4SpeedToggleButton.Interactable = machine4ModeInteractable;
+  machineView.machine4ParamDragHandleButton.Interactable = machine4ModeInteractable;
   machineView.machine4ParamApplyButton.Interactable = machine4ModeInteractable;
   machineView.machine4ColumnGapInput.Interactable = machine4ModeInteractable;
   machineView.machine4StartupDurationInput.Interactable = machine4ModeInteractable;
@@ -2044,7 +2063,11 @@ const SetEditorModeEnabled = (enabled: boolean): void => {
   machineView.inspectorPanel.Interactable = false;
 };
 
-const MakePanelDraggable = (dragButton: Button, panelObject: GameObject): void => {
+const MakePanelDraggable = (
+  dragButton: Button,
+  panelObject: GameObject,
+  requireEditorMode = true,
+): void => {
   const handle = dragButton.Element;
   handle.style.cursor = "grab";
   let dragging = false;
@@ -2052,7 +2075,7 @@ const MakePanelDraggable = (dragButton: Button, panelObject: GameObject): void =
   let previousY = 0;
 
   handle.addEventListener("pointerdown", (event) => {
-    if (!editorModeEnabled || event.button !== 0) {
+    if ((requireEditorMode && !editorModeEnabled) || event.button !== 0) {
       return;
     }
     dragging = true;
@@ -2554,6 +2577,7 @@ machineView.backButton.OnClick.AddListener(() => {
 
 MakePanelDraggable(machineView.hierarchyDragHandleButton, machineView.hierarchyPanelObject);
 MakePanelDraggable(machineView.inspectorDragHandleButton, machineView.inspectorPanelObject);
+MakePanelDraggable(machineView.machine4ParamDragHandleButton, machineView.machine4ParamRow, false);
 
 ApplyLoginMode();
 UpdateMachineHud();
