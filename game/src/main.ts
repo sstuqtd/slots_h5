@@ -954,7 +954,7 @@ function BuildMachinePage(root: GameObject, canvas: HTMLCanvasElement): MachineV
   machine4ParamRowPanel.BorderColor = "#4f6096";
   machine4ParamRowPanel.BorderWidth = 1;
   machine4ParamRowPanel.BorderRadius = 10;
-  SetRect(machine4ParamRowNode, canvas.width - EDITOR_SIDE_MARGIN, canvas.height / 2, 360, 430, 1, 0.5);
+  SetRect(machine4ParamRowNode, canvas.width / 2, canvas.height - EDITOR_SIDE_MARGIN, 460, 430, 0.5, 1);
 
   const machine4ParamHeaderRowNode = CreateChild(machine4ParamRowNode, "Machine4ParamHeaderRow");
   const machine4ParamHeaderRowPanel = machine4ParamHeaderRowNode.AddComponent(Panel);
@@ -2224,7 +2224,13 @@ const OpenMachinePage = (machine: MachineEntry): void => {
   lobbyView.root.SetActive(false);
   machineView.root.SetActive(true);
   SetRuleOverlayVisible(false);
-  SetEditorModeEnabled(false);
+  if (machine.id === 4) {
+    SetEditorModeEnabled(true);
+    SetHierarchyPanelVisible(true);
+    SetInspectorPanelVisible(true);
+  } else {
+    SetEditorModeEnabled(false);
+  }
   RebuildHierarchyTree();
   selectedHierarchyKey = GetHierarchyNodeKey(machineView.root);
   SelectHierarchyNode(selectedHierarchyKey);
